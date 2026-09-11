@@ -10,6 +10,7 @@
   --danger: #ef4444;
   --radius: 14px;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
 }
 
 * {
@@ -127,6 +128,11 @@ body {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+}
+
+.tag-form input::placeholder,
+#search::placeholder {
+  color: var(--text-muted);
 }
 
 .tag-form input[type='color'] {
