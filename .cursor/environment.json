@@ -1,0 +1,17 @@
+{
+  "name": "agentTag",
+  "install": "npm install",
+  "terminals": [
+    {
+      "name": "dev-server",
+      "command": "npm run dev",
+      "description": "Runs the agentTag web app (API + UI) on http://localhost:3000 with auto-reload."
+    }
+  ],
+  "ports": [
+    {
+      "name": "web",
+      "port": 3000
+    }
+  ]
+}

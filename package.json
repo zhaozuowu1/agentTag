@@ -1,0 +1,17 @@
+{
+  "name": "agenttag",
+  "version": "0.1.0",
+  "description": "agentTag — a small full-stack app to create, search, and manage tags for your AI agents.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
