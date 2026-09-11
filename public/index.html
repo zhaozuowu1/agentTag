@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>agentTag</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏷️</text></svg>"
+    />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">🏷️</span>
+          <div>
+            <h1>agentTag</h1>
+            <p class="tagline">Organize and label your AI agents</p>
+          </div>
+        </div>
+        <div class="stats" id="stats">0 tags</div>
+      </header>
+
+      <main class="layout">
+        <section class="panel create-panel">
+          <h2>New tag</h2>
+          <form id="tag-form" class="tag-form">
+            <label>
+              Name
+              <input id="name" name="name" type="text" placeholder="e.g. production" autocomplete="off" required />
+            </label>
+            <label>
+              Description
+              <input id="description" name="description" type="text" placeholder="Optional description" autocomplete="off" />
+            </label>
+            <label>
+              Color
+              <input id="color" name="color" type="color" value="#6366f1" />
+            </label>
+            <button type="submit" class="btn-primary">Add tag</button>
+            <p class="form-error" id="form-error" role="alert"></p>
+          </form>
+        </section>
+
+        <section class="panel list-panel">
+          <div class="list-header">
+            <h2>Tags</h2>
+            <input id="search" type="search" placeholder="Search tags…" autocomplete="off" />
+          </div>
+          <ul id="tag-list" class="tag-list" aria-live="polite"></ul>
+          <p id="empty" class="empty hidden">No tags yet. Create your first one!</p>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
