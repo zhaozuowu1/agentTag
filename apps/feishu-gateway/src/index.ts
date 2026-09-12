@@ -8,7 +8,12 @@ import { Queue } from "bullmq";
 import { Hono } from "hono";
 import Redis from "ioredis";
 import { ulid } from "ulid";
-import { unwrapFeishuBody } from "./encrypt.ts";
+import {
+  eventVerificationToken,
+  feishuRequestSignature,
+  signaturesMatch,
+  unwrapFeishuBody,
+} from "./encrypt.ts";
 import { handleBotAdded } from "./handlers/bot-added.ts";
 import { handleMessageReceive } from "./handlers/message-receive.ts";
 import { parseBotAdded, parseReceiveMessage } from "./parse-event.ts";
@@ -24,16 +29,30 @@ export function createGatewayApp(options: {
   const app = new Hono();
   app.get("/health", (c) => c.json({ ok: true }));
   app.post("/feishu/events", async (c) => {
-    const raw = (await c.req.json()) as Record<string, unknown>;
-    const payload = unwrapFeishuBody(raw, options.encryptKey);
-    if (payload.type === "url_verification" || typeof payload.challenge === "string") {
-      if (
-        options.verificationToken &&
-        typeof payload.token === "string" &&
-        payload.token !== options.verificationToken
-      ) {
-        return c.json({ error: "invalid verification token" }, 403);
+    const rawText = await c.req.text();
+    if (options.encryptKey) {
+      const timestamp = c.req.header("X-Lark-Request-Timestamp") ?? "";
+      const nonce = c.req.header("X-Lark-Request-Nonce") ?? "";
+      const signature = c.req.header("X-Lark-Signature") ?? "";
+      const expected = feishuRequestSignature(timestamp, nonce, options.encryptKey, rawText);
+      if (!signature || !signaturesMatch(expected, signature)) {
+        return c.json({ error: "invalid signature" }, 401);
       }
+    }
+    let raw: Record<string, unknown>;
+    try {
+      raw = JSON.parse(rawText) as Record<string, unknown>;
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    if (options.encryptKey && typeof raw.encrypt !== "string") {
+      return c.json({ error: "encrypted payload required" }, 400);
+    }
+    const payload = unwrapFeishuBody(raw, options.encryptKey);
+    if (options.verificationToken && eventVerificationToken(payload) !== options.verificationToken) {
+      return c.json({ error: "invalid verification token" }, 403);
+    }
+    if (payload.type === "url_verification" || typeof payload.challenge === "string") {
       return c.json({ challenge: payload.challenge });
     }
     await options.onEvent(payload);

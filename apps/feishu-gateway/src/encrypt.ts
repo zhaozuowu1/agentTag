@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 export function decryptFeishuEncrypt(encryptKey: string, encrypt: string): string {
   const key = createHash("sha256").update(encryptKey).digest();
@@ -22,4 +22,36 @@ export function unwrapFeishuBody(raw: Record<string, unknown>, encryptKey: strin
     return JSON.parse(decryptFeishuEncrypt(encryptKey, raw.encrypt)) as Record<string, unknown>;
   }
   return raw;
+}
+
+export function feishuRequestSignature(
+  timestamp: string,
+  nonce: string,
+  encryptKey: string,
+  body: string,
+): string {
+  return createHash("sha256").update(timestamp + nonce + encryptKey + body).digest("hex");
+}
+
+export function signaturesMatch(expected: string, actual: string): boolean {
+  const left = Buffer.from(expected);
+  const right = Buffer.from(actual);
+  if (left.length !== right.length) {
+    return false;
+  }
+  return timingSafeEqual(left, right);
+}
+
+export function eventVerificationToken(payload: Record<string, unknown>): string | undefined {
+  if (typeof payload.token === "string") {
+    return payload.token;
+  }
+  const header = payload.header;
+  if (header && typeof header === "object") {
+    const token = (header as { token?: unknown }).token;
+    if (typeof token === "string") {
+      return token;
+    }
+  }
+  return undefined;
 }
