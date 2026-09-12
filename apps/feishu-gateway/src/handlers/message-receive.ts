@@ -7,6 +7,8 @@ import {
   shouldRunInChat,
   type SessionStatus,
 } from "@agenttag/domain";
+import { mergeProgress, type EventProgress } from "../event-progress.ts";
+import { DEFAULT_EVENT_RETRY, runWithRetry, type RetryOptions } from "../retry.ts";
 
 export interface ReceiveMessageEvent {
   eventId: string;
@@ -54,6 +56,9 @@ export interface MessageReceiveDeps {
   newId: () => string;
   getBudget(tenantKey: string): Promise<{ usedUsd: number; limitUsd: number | null }>;
   releaseEvent(eventId: string): Promise<void>;
+  loadProgress(eventId: string): Promise<EventProgress | null>;
+  saveProgress(eventId: string, patch: EventProgress): Promise<void>;
+  retry?: RetryOptions;
 }
 
 export async function handleMessageReceive(
@@ -73,13 +78,37 @@ export async function handleMessageReceive(
   }
 }
 
+function retryOpts(deps: MessageReceiveDeps): RetryOptions {
+  return deps.retry ?? DEFAULT_EVENT_RETRY;
+}
+
+async function retryOp<T>(deps: MessageReceiveDeps, fn: () => Promise<T>): Promise<T> {
+  return runWithRetry(fn, retryOpts(deps));
+}
+
+async function persistProgress(
+  eventId: string,
+  deps: MessageReceiveDeps,
+  patch: EventProgress,
+): Promise<EventProgress> {
+  const current = await deps.loadProgress(eventId);
+  const next = mergeProgress(current, patch);
+  await deps.saveProgress(eventId, next);
+  return next;
+}
+
 async function handleClaimedMessage(
   event: ReceiveMessageEvent,
   deps: MessageReceiveDeps,
 ): Promise<void> {
+  let progress = (await deps.loadProgress(event.eventId)) ?? {};
+  if (progress.created && progress.sessionId) {
+    await retryOp(deps, () => deps.enqueue({ sessionId: progress.sessionId! }));
+    return;
+  }
 
-  const chat = await deps.getChat(event.chatId);
-  const grant = await deps.lookupGrant(event.tenantKey, event.chatId);
+  const chat = await retryOp(deps, () => deps.getChat(event.chatId));
+  const grant = await retryOp(deps, () => deps.lookupGrant(event.tenantKey, event.chatId));
   const runDecision = shouldRunInChat({
     authorized: grant.authorized,
     enabled: grant.enabled,
@@ -96,7 +125,7 @@ async function handleClaimedMessage(
     return;
   }
 
-  const botOpenId = await deps.botOpenId();
+  const botOpenId = await retryOp(deps, () => deps.botOpenId());
   const mentionedBot = event.mentionOpenIds.includes(botOpenId);
   const existingSession = await deps.findSession({
     chatId: event.chatId,
@@ -122,7 +151,7 @@ async function handleClaimedMessage(
   }
 
   if (decision.type === "steer") {
-    const budget = await deps.getBudget(event.tenantKey);
+    const budget = await retryOp(deps, () => deps.getBudget(event.tenantKey));
     if (!canStartSession(budget.usedUsd, budget.limitUsd)) {
       const card = progressCard({
         title: "本月额度已用完",
@@ -132,8 +161,11 @@ async function handleClaimedMessage(
       await deps.replyInThread(event.messageId, card);
       return;
     }
-    await deps.appendUserMessage(decision.sessionId, decision.openId, decision.text);
-    await deps.enqueue({ sessionId: decision.sessionId });
+    if (!progress.appended) {
+      await deps.appendUserMessage(decision.sessionId, decision.openId, decision.text);
+      progress = await persistProgress(event.eventId, deps, { appended: true, sessionId: decision.sessionId });
+    }
+    await retryOp(deps, () => deps.enqueue({ sessionId: decision.sessionId }));
     return;
   }
 
@@ -141,7 +173,7 @@ async function handleClaimedMessage(
     await deps.archiveSession(decision.sessionId);
   }
 
-  const budget = await deps.getBudget(event.tenantKey);
+  const budget = await retryOp(deps, () => deps.getBudget(event.tenantKey));
   if (!canStartSession(budget.usedUsd, budget.limitUsd)) {
     const card = progressCard({
       title: "本月额度已用完",
@@ -159,28 +191,40 @@ async function handleClaimedMessage(
     statusText: "已排队，我会在话题里更新进度。",
     checklist: [{ id: "queue", label: "开始处理", status: "doing" }],
   });
-  let reply: { messageId: string; threadId: string | null };
-  try {
-    reply = await deps.replyInThread(event.messageId, card);
-  } catch (error) {
-    if (error instanceof FeishuApiError && error.code === 230071) {
-      const sent = await deps.sendCard(event.chatId, card);
-      reply = { messageId: sent.messageId, threadId: null };
-    } else {
-      throw error;
+  let reply = progress.card;
+  if (!reply) {
+    try {
+      reply = await deps.replyInThread(event.messageId, card);
+    } catch (error) {
+      if (error instanceof FeishuApiError && error.code === 230071) {
+        const sent = await deps.sendCard(event.chatId, card);
+        reply = { messageId: sent.messageId, threadId: null };
+      } else {
+        throw error;
+      }
     }
+    progress = await persistProgress(event.eventId, deps, { card: reply });
   }
-  const sessionId = deps.newId();
-  await deps.createSession({
-    id: sessionId,
-    tenantKey: event.tenantKey,
-    chatId: event.chatId,
-    threadId: reply.threadId ?? event.threadId,
-    rootMessageId: event.rootId ?? event.messageId,
-    kind: reply.threadId ? "thread" : "chat",
-    startedByOpenId: event.openId,
-    checklistMessageId: reply.messageId,
-    userText,
-  });
-  await deps.enqueue({ sessionId });
+  if (!reply) {
+    throw new Error("missing feishu progress card");
+  }
+  const sessionId = progress.sessionId ?? deps.newId();
+  if (!progress.sessionId) {
+    progress = await persistProgress(event.eventId, deps, { sessionId });
+  }
+  await retryOp(deps, () =>
+    deps.createSession({
+      id: sessionId,
+      tenantKey: event.tenantKey,
+      chatId: event.chatId,
+      threadId: reply.threadId ?? event.threadId,
+      rootMessageId: event.rootId ?? event.messageId,
+      kind: reply.threadId ? "thread" : "chat",
+      startedByOpenId: event.openId,
+      checklistMessageId: reply.messageId,
+      userText,
+    }),
+  );
+  progress = await persistProgress(event.eventId, deps, { created: true });
+  await retryOp(deps, () => deps.enqueue({ sessionId }));
 }

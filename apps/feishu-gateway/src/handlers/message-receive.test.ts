@@ -1,5 +1,6 @@
 import { progressCard } from "@agenttag/feishu";
 import { describe, expect, it } from "vitest";
+import type { EventProgress } from "../event-progress.ts";
 import { handleMessageReceive, type MessageReceiveDeps, type ReceiveMessageEvent } from "./message-receive.ts";
 
 const event: ReceiveMessageEvent = {
@@ -20,6 +21,7 @@ function createDeps(overrides: Partial<MessageReceiveDeps> = {}) {
   const replies: Array<{ messageId: string; card: unknown }> = [];
   const sessions: Array<{ id: string; status: "running" | "idle" | "archived" | "failed"; threadId: string | null }> =
     [];
+  const progress = new Map<string, EventProgress>();
 
   const deps: MessageReceiveDeps & { enqueued: typeof enqueued; replies: typeof replies } = {
     enqueued,
@@ -64,6 +66,11 @@ function createDeps(overrides: Partial<MessageReceiveDeps> = {}) {
     releaseEvent: async (eventId) => {
       claimed.delete(eventId);
     },
+    loadProgress: async (eventId) => progress.get(eventId) ?? null,
+    saveProgress: async (eventId, patch) => {
+      progress.set(eventId, { ...progress.get(eventId), ...patch });
+    },
+    retry: { attempts: 3, delayMs: 0 },
     ...overrides,
   };
   return deps;
@@ -169,6 +176,53 @@ describe("handleMessageReceive", () => {
     expect(deps.enqueued).toEqual([]);
     const card = deps.replies[0]?.card as { header?: { title?: { content?: string } } };
     expect(card.header?.title?.content).toBe("本月额度已用完");
+  });
+
+  it("sends only one progress card when createSession fails and the same event is retried", async () => {
+    const claimed = new Set<string>();
+    const replies: unknown[] = [];
+    const progress = new Map<string, { card?: { messageId: string; threadId: string | null }; sessionId?: string }>();
+    const claimEvent = async (eventId: string) => {
+      if (claimed.has(eventId)) {
+        return false;
+      }
+      claimed.add(eventId);
+      return true;
+    };
+    const releaseEvent = async (eventId: string) => {
+      claimed.delete(eventId);
+    };
+    const replyInThread: MessageReceiveDeps["replyInThread"] = async (_messageId, card) => {
+      replies.push(card);
+      return { messageId: "om_card", threadId: "omt_new" };
+    };
+    let creates = 0;
+    const run = () =>
+      handleMessageReceive(
+        event,
+        createDeps({
+          claimEvent,
+          releaseEvent,
+          replyInThread,
+          loadProgress: async (eventId) => progress.get(eventId) ?? null,
+          saveProgress: async (eventId, patch) => {
+            progress.set(eventId, { ...progress.get(eventId), ...patch });
+          },
+          retry: { attempts: 1, delayMs: 0 },
+          createSession: async (input) => {
+            creates += 1;
+            if (creates < 3) {
+              throw new Error("db timeout");
+            }
+            return { id: input.id, status: "running" };
+          },
+        }),
+      );
+    await expect(run()).rejects.toThrow(/db timeout/);
+    await expect(run()).rejects.toThrow(/db timeout/);
+    await run();
+    expect(replies).toHaveLength(1);
+    expect(creates).toBe(3);
   });
 
   it("releases the dedup key when handling fails so a retry can proceed", async () => {

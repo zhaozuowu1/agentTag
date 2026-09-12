@@ -186,24 +186,24 @@ describe("createGatewayApp event ack", () => {
     expect(order[0]).toBe("http-returned");
   });
 
-  it("retries onEvent after 200 when the handler fails", async () => {
+  it("does not retry the whole onEvent after returning 200", async () => {
     let attempts = 0;
     const app = createGatewayApp({
       encryptKey: ENCRYPT_KEY,
       verificationToken: VERIFICATION_TOKEN,
-      retry: { attempts: 3, delayMs: 0 },
       onEvent: async () => {
         attempts += 1;
-        if (attempts < 3) {
-          throw new Error("transient feishu error");
-        }
+        throw new Error("transient feishu error");
       },
     });
     const req = signedEncryptRequest(eventPayload(), "nonce-retry");
     const res = await app.request("/feishu/events", { method: "POST", ...req });
     expect(res.status).toBe(200);
     await vi.waitFor(() => {
-      expect(attempts).toBe(3);
+      expect(attempts).toBeGreaterThanOrEqual(1);
     });
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(attempts).toBe(1);
   });
 });
