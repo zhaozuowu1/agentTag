@@ -35,6 +35,7 @@ export interface RunAgentLoopInput {
   initial: AgentTurnResult;
   onTurn: (result: AgentTurnResult) => Promise<void>;
   onUsage?: (usage: { input_tokens: number; output_tokens: number }) => Promise<void>;
+  onToolError?: (error: { name: string; message: string }) => Promise<void>;
   maxTurns?: number;
 }
 
@@ -110,7 +111,14 @@ export async function runAgentLoop(input: RunAgentLoopInput): Promise<AgentTurnR
     const toolResults: LlmContent[] = [];
     for (const use of toolUses) {
       const impl = input.tools[use.name];
-      const content = impl ? await impl(use.input) : `未知工具：${use.name}`;
+      let content: string;
+      try {
+        content = impl ? await impl(use.input) : `未知工具：${use.name}`;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await input.onToolError?.({ name: use.name, message });
+        throw error;
+      }
       const event: TranscriptEvent = {
         type: "tool_result",
         name: use.name,

@@ -131,6 +131,44 @@ describe("processSessionJob", () => {
     expect(roundTwo.at(-1)?.role).toBe("user");
   });
 
+  it("marks the session failed and writes audit when a tool throws without crashing the job", async () => {
+    const statuses: string[] = [];
+    const audits: Array<{ toolName: string; success: boolean }> = [];
+    const llm: LlmClient = {
+      async create() {
+        return {
+          stop_reason: "tool_use",
+          content: [{ type: "tool_use", id: "t1", name: "feishu_list_messages", input: {} }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+    await expect(
+      processSessionJob(
+        { sessionId: "sess_1" },
+        {
+          llm,
+          loadSession: async () => session(),
+          patchCard: async () => {},
+          recordUsage: async () => {},
+          recordAudit: async (row) => {
+            audits.push({ toolName: row.toolName, success: row.success });
+          },
+          markSession: async (_id, status) => {
+            statuses.push(status);
+          },
+          appendEvents: async () => {},
+          listMessages: async () => {
+            throw new Error("upstream timeout");
+          },
+          getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(statuses).toContain("failed");
+    expect(audits).toContainEqual({ toolName: "feishu_list_messages", success: false });
+  });
+
   it("does not call the model when the tenant monthly budget is exhausted", async () => {
     let called = 0;
     const llm: LlmClient = {
