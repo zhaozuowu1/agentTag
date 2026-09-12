@@ -17,6 +17,7 @@ import {
 import { handleBotAdded } from "./handlers/bot-added.ts";
 import { handleMessageReceive } from "./handlers/message-receive.ts";
 import { parseBotAdded, parseReceiveMessage } from "./parse-event.ts";
+import { mergeProgress, type EventProgress } from "./event-progress.ts";
 import { createGatewayStore } from "./store.ts";
 
 const SESSION_QUEUE = "agenttag";
@@ -39,7 +40,12 @@ export function createGatewayApp(options: {
     if (options.encryptKey && typeof raw.encrypt !== "string") {
       return c.json({ error: "encrypted payload required" }, 400);
     }
-    const payload = unwrapFeishuBody(raw, options.encryptKey);
+    let payload: Record<string, unknown>;
+    try {
+      payload = unwrapFeishuBody(raw, options.encryptKey);
+    } catch {
+      return c.json({ error: "invalid encrypt" }, 400);
+    }
     if (options.verificationToken && eventVerificationToken(payload) !== options.verificationToken) {
       return c.json({ error: "invalid verification token" }, 403);
     }
@@ -73,6 +79,24 @@ export async function claimEvent(redis: Redis, eventId: string): Promise<boolean
 
 export async function releaseEvent(redis: Redis, eventId: string): Promise<void> {
   await redis.del(`feishu:event:${eventId}`);
+}
+
+export async function saveEventProgress(redis: Redis, eventId: string, patch: EventProgress): Promise<void> {
+  const current = await loadEventProgress(redis, eventId);
+  const next = mergeProgress(current, patch);
+  await redis.set(`feishu:progress:${eventId}`, JSON.stringify(next), "EX", 86400);
+}
+
+export async function loadEventProgress(redis: Redis, eventId: string): Promise<EventProgress | null> {
+  const raw = await redis.get(`feishu:progress:${eventId}`);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as EventProgress;
+  } catch {
+    return null;
+  }
 }
 
 export async function startGateway() {
@@ -109,6 +133,8 @@ export async function startGateway() {
             sendText: async (chatId, text) => {
               await feishu.sendText(chatId, text);
             },
+            loadProgress: (eventId) => loadEventProgress(redis, eventId),
+            saveProgress: (eventId, patch) => saveEventProgress(redis, eventId, patch),
           });
         } catch (error) {
           await releaseEvent(redis, parsed.eventId);
@@ -154,6 +180,8 @@ export async function startGateway() {
           newId: () => ulid(),
           getBudget: (tenantKey) => store.getBudget(tenantKey),
           releaseEvent: (eventId) => releaseEvent(redis, eventId),
+          loadProgress: (eventId) => loadEventProgress(redis, eventId),
+          saveProgress: (eventId, patch) => saveEventProgress(redis, eventId, patch),
         });
       }
     },

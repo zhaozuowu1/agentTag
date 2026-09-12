@@ -9,8 +9,8 @@
   "scripts": {
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "generate": "drizzle-kit generate",
-    "migrate": "tsx src/migrate.ts"
+    "generate": "node --env-file-if-exists=../../.env ./node_modules/drizzle-kit/bin.cjs generate",
+    "migrate": "node --env-file-if-exists=../../.env ./node_modules/tsx/dist/cli.mjs src/migrate.ts"
   },
   "dependencies": {
     "@agenttag/domain": "workspace:*",

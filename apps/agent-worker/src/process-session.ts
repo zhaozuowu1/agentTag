@@ -125,6 +125,15 @@ export async function processSessionJob(
             outputTokens: usage.output_tokens,
           });
         },
+        onToolError: async ({ name }) => {
+          await deps.recordAudit({
+            sessionId: session.id,
+            chatId: session.chatId,
+            openId: session.startedByOpenId,
+            toolName: name,
+            success: false,
+          });
+        },
       });
       await deps.patchCard(session.checklistMessageId, cardFrom(result, "处理完成"));
       await deps.appendEvents(

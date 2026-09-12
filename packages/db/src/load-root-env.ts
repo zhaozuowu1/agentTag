@@ -1,25 +1,26 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { defineConfig } from "drizzle-kit";
 
-function loadRepoRootEnvFromConfig(): void {
-  let dir = fileURLToPath(new URL(".", import.meta.url));
+export function findRepoRoot(startDir: string): string {
+  let dir = startDir;
   while (true) {
     if (existsSync(join(dir, "pnpm-workspace.yaml")) || existsSync(join(dir, "pnpm-lock.yaml"))) {
-      break;
+      return dir;
     }
     const parent = dirname(dir);
     if (parent === dir) {
-      break;
+      return startDir;
     }
     dir = parent;
   }
-  const envFile = join(dir, ".env");
-  if (!existsSync(envFile)) {
+}
+
+export function loadEnvFile(filePath: string, env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env): void {
+  if (!existsSync(filePath)) {
     return;
   }
-  for (const rawLine of readFileSync(envFile, "utf8").split(/\r?\n/)) {
+  const text = readFileSync(filePath, "utf8");
+  for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) {
       continue;
@@ -36,19 +37,17 @@ function loadRepoRootEnvFromConfig(): void {
     ) {
       value = value.slice(1, -1);
     }
-    if (process.env[key] === undefined) {
-      process.env[key] = value;
+    if (env[key] === undefined) {
+      env[key] = value;
     }
   }
 }
 
-loadRepoRootEnvFromConfig();
-
-export default defineConfig({
-  schema: "./src/schema/index.ts",
-  out: "./drizzle",
-  dialect: "postgresql",
-  dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgres://agenttag:agenttag@localhost:5432/agenttag",
-  },
-});
+export function loadRepoRootEnv(options?: {
+  startDir?: string;
+  env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+}): void {
+  const startDir = options?.startDir ?? import.meta.dirname;
+  const env = options?.env ?? process.env;
+  loadEnvFile(join(findRepoRoot(startDir), ".env"), env);
+}

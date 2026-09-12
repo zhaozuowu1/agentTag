@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { encryptFeishuPayload } from "./encrypt.ts";
 import { createGatewayApp } from "./index.ts";
 
@@ -148,6 +148,25 @@ describe("createGatewayApp webhook auth", () => {
     expect(await res.json()).toEqual({ challenge: "ajls384kdjx98xx" });
     expect(seen).toHaveLength(0);
   });
+
+  it("returns 400 when encrypt cannot be decrypted", async () => {
+    const seen: unknown[] = [];
+    const app = createGatewayApp({
+      encryptKey: ENCRYPT_KEY,
+      verificationToken: VERIFICATION_TOKEN,
+      onEvent: async (payload) => {
+        seen.push(payload);
+      },
+    });
+    const res = await app.request("/feishu/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ encrypt: "!!!!not-valid-ciphertext!!!!" }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid encrypt" });
+    expect(seen).toHaveLength(0);
+  });
 });
 
 describe("createGatewayApp event ack", () => {
@@ -165,5 +184,26 @@ describe("createGatewayApp event ack", () => {
     order.push("http-returned");
     expect(res.status).toBe(200);
     expect(order[0]).toBe("http-returned");
+  });
+
+  it("does not retry the whole onEvent after returning 200", async () => {
+    let attempts = 0;
+    const app = createGatewayApp({
+      encryptKey: ENCRYPT_KEY,
+      verificationToken: VERIFICATION_TOKEN,
+      onEvent: async () => {
+        attempts += 1;
+        throw new Error("transient feishu error");
+      },
+    });
+    const req = signedEncryptRequest(eventPayload(), "nonce-retry");
+    const res = await app.request("/feishu/events", { method: "POST", ...req });
+    expect(res.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(attempts).toBeGreaterThanOrEqual(1);
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(attempts).toBe(1);
   });
 });

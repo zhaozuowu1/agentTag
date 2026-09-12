@@ -95,6 +95,38 @@ describe("runAgentLoop", () => {
     expect(result.checklist.some((item) => item.status === "done")).toBe(true);
   });
 
+  it("catches a throwing tool, reports it, and still fails the loop", async () => {
+    const toolErrors: Array<{ name: string; message: string }> = [];
+    const llm: LlmClient = {
+      async create() {
+        return {
+          stop_reason: "tool_use",
+          content: [{ type: "tool_use", id: "tool_1", name: "boom", input: {} }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+    await expect(
+      runAgentLoop({
+        llm,
+        model: "claude-sonnet-4-6",
+        system: "you",
+        messages: [{ role: "user", content: "hi" }],
+        tools: {
+          boom: async () => {
+            throw new Error("memory does not belong to this chat");
+          },
+        },
+        initial: empty,
+        onTurn: async () => {},
+        onToolError: async (error) => {
+          toolErrors.push(error);
+        },
+      }),
+    ).rejects.toThrow("memory does not belong to this chat");
+    expect(toolErrors).toEqual([{ name: "boom", message: "memory does not belong to this chat" }]);
+  });
+
   it("marks the session failed when the model returns 5xx", async () => {
     const llm: LlmClient = {
       async create() {
