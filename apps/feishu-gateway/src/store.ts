@@ -86,5 +86,25 @@ export function createGatewayStore(db: Db) {
         .set({ status: "archived" })
         .where(eq(workingSessions.id, sessionId));
     },
+
+    async appendUserMessage(sessionId: string, openId: string, text: string) {
+      const rows = await db.select().from(workingSessions).where(eq(workingSessions.id, sessionId)).limit(1);
+      const row = rows[0];
+      if (!row) {
+        return;
+      }
+      const transcript = Array.isArray(row.transcript) ? row.transcript : [];
+      await db
+        .update(workingSessions)
+        .set({
+          status: "running",
+          lastActivityAt: new Date(),
+          transcript: [
+            ...transcript,
+            { type: "user", openId, text, at: new Date().toISOString() },
+          ],
+        })
+        .where(eq(workingSessions.id, sessionId));
+    },
   };
 }

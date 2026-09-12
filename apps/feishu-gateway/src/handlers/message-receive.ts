@@ -45,6 +45,7 @@ export interface MessageReceiveDeps {
   archiveSession(sessionId: string): Promise<void>;
   replyInThread(messageId: string, card: unknown): Promise<{ messageId: string; threadId: string | null }>;
   sendText(chatId: string, text: string): Promise<void>;
+  appendUserMessage(sessionId: string, openId: string, text: string): Promise<void>;
   enqueue(job: { sessionId: string }): Promise<void>;
   newId: () => string;
 }
@@ -101,6 +102,7 @@ export async function handleMessageReceive(
   }
 
   if (decision.type === "steer") {
+    await deps.appendUserMessage(decision.sessionId, decision.openId, decision.text);
     await deps.enqueue({ sessionId: decision.sessionId });
     return;
   }

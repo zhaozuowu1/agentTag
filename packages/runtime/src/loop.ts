@@ -128,6 +128,21 @@ export async function runAgentLoop(input: RunAgentLoopInput): Promise<AgentTurnR
   return { ...result, stop: true };
 }
 
+export function messagesFromTranscript(
+  events: Array<{ type: string; text?: string }>,
+): LlmMessage[] {
+  const messages: LlmMessage[] = [];
+  for (const event of events) {
+    if (event.type === "user" && event.text) {
+      messages.push({ role: "user", content: event.text });
+    }
+    if (event.type === "assistant" && event.text) {
+      messages.push({ role: "assistant", content: event.text });
+    }
+  }
+  return messages;
+}
+
 function defaultToolDefs(names: string[]): unknown[] {
   return names.map((name) => ({
     name,

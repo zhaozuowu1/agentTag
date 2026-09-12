@@ -1,6 +1,6 @@
 import type { AgentTurnResult, TranscriptEvent } from "@agenttag/domain";
 import { progressCard } from "@agenttag/feishu";
-import { runAgentLoop, type LlmClient } from "@agenttag/runtime";
+import { messagesFromTranscript, runAgentLoop, type LlmClient } from "@agenttag/runtime";
 
 export interface WorkerSession {
   id: string;
@@ -56,7 +56,11 @@ export async function processSessionJob(
 
   const userTurns = session.transcript.filter((event) => event.type === "user");
   const lastUser = userTurns.at(-1);
-  const userText = lastUser && lastUser.type === "user" ? lastUser.text : "";
+  const fallback = lastUser && lastUser.type === "user" ? lastUser.text : "请根据当前会话继续。";
+  const messages = messagesFromTranscript(session.transcript);
+  if (messages.length === 0) {
+    messages.push({ role: "user", content: fallback });
+  }
 
   const initial: AgentTurnResult = {
     checklist: [{ id: "history", label: "读取群历史", status: "doing" }],
@@ -71,7 +75,7 @@ export async function processSessionJob(
       model: "claude-sonnet-4-6",
       system:
         "你是飞书群里的队友 Claude。用中文回答。先用工具了解本群现场，再给出简洁结论。只把稳定约定写入记忆工具（若可用），不要把流水账当记忆。",
-      messages: [{ role: "user", content: userText || "请根据当前会话继续。" }],
+      messages,
       tools: {
         feishu_list_messages: deps.listMessages,
         feishu_search_messages: deps.searchMessages ?? deps.listMessages,

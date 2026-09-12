@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reduceToolResult, runAgentLoop, type LlmClient } from "./loop.ts";
+import { messagesFromTranscript, reduceToolResult, runAgentLoop, type LlmClient } from "./loop.ts";
 import type { AgentTurnResult, TranscriptEvent } from "@agenttag/domain";
 
 const empty: AgentTurnResult = {
@@ -7,6 +7,22 @@ const empty: AgentTurnResult = {
   replyMarkdown: "",
   stop: false,
 };
+
+describe("messagesFromTranscript", () => {
+  it("replays user and assistant turns so steer continues the same thread", () => {
+    expect(
+      messagesFromTranscript([
+        { type: "user", text: "总结" },
+        { type: "assistant", text: "两件事项" },
+        { type: "user", text: "改成表格" },
+      ]),
+    ).toEqual([
+      { role: "user", content: "总结" },
+      { role: "assistant", content: "两件事项" },
+      { role: "user", content: "改成表格" },
+    ]);
+  });
+});
 
 describe("reduceToolResult", () => {
   it("marks the matching checklist item done after a tool result", () => {

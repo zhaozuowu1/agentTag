@@ -53,6 +53,7 @@ function createDeps(overrides: Partial<MessageReceiveDeps> = {}) {
       return { messageId: "om_card", threadId: "omt_new" };
     },
     sendText: async () => {},
+    appendUserMessage: async () => {},
     enqueue: async (job) => {
       enqueued.push(job);
     },
@@ -82,6 +83,51 @@ describe("handleMessageReceive", () => {
     await handleMessageReceive(event, deps);
     expect(deps.enqueued).toEqual([]);
     expect(deps.replies).toEqual([]);
+  });
+
+  it("steers in-thread follow-ups without another mention", async () => {
+    const appended: Array<{ sessionId: string; text: string; openId: string }> = [];
+    const deps = createDeps({
+      findSession: async () => ({ id: "sess_live", status: "idle" }),
+      appendUserMessage: async (sessionId, openId, text) => {
+        appended.push({ sessionId, openId, text });
+      },
+    });
+    await handleMessageReceive(
+      {
+        ...event,
+        eventId: "ev_steer",
+        threadId: "omt_1",
+        mentionOpenIds: [],
+        text: "把结论改成表格",
+      },
+      deps,
+    );
+    expect(appended).toEqual([{ sessionId: "sess_live", openId: "ou_user", text: "把结论改成表格" }]);
+    expect(deps.enqueued).toEqual([{ sessionId: "sess_live" }]);
+    expect(deps.replies).toEqual([]);
+  });
+
+  it("archives the current session on !restart and starts a new one", async () => {
+    const archived: string[] = [];
+    const deps = createDeps({
+      findSession: async () => ({ id: "sess_old", status: "running" }),
+      archiveSession: async (id) => {
+        archived.push(id);
+      },
+      newId: () => "sess_new",
+    });
+    await handleMessageReceive(
+      {
+        ...event,
+        eventId: "ev_restart",
+        text: "!restart",
+      },
+      deps,
+    );
+    expect(archived).toEqual(["sess_old"]);
+    expect(deps.enqueued).toEqual([{ sessionId: "sess_new" }]);
+    expect(deps.replies).toHaveLength(1);
   });
 });
 
