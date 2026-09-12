@@ -88,6 +88,19 @@ export function createFeishuClient(options: CreateFeishuClientOptions): FeishuCl
       });
     },
 
+    async sendText(chatId, text) {
+      const data = await api<{ message_id: string }>(
+        "POST",
+        "/open-apis/im/v1/messages?receive_id_type=chat_id",
+        {
+          receive_id: chatId,
+          msg_type: "text",
+          content: JSON.stringify({ text }),
+        },
+      );
+      return { messageId: data.message_id };
+    },
+
     async getChat(chatId) {
       const data = await api<{
         chat_mode?: string;

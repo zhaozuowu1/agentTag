@@ -12,9 +12,16 @@
     "@agenttag/config": "workspace:*",
     "@agenttag/db": "workspace:*",
     "@agenttag/domain": "workspace:*",
-    "@agenttag/feishu": "workspace:*"
+    "@agenttag/feishu": "workspace:*",
+    "@hono/node-server": "^1.19.0",
+    "bullmq": "^5.58.5",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.9.8",
+    "ioredis": "^5.8.0",
+    "ulid": "^2.4.0"
   },
   "devDependencies": {
+    "@types/node": "^22.15.30",
     "tsx": "^4.20.5",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
