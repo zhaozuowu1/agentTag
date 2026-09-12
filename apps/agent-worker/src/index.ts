@@ -7,7 +7,7 @@ import { createDbMemoryStore } from "@agenttag/memory";
 import Anthropic from "@anthropic-ai/sdk";
 import { Worker } from "bullmq";
 import { and, eq, gte, sql, sum } from "drizzle-orm";
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 import { ulid } from "ulid";
 import { processSessionJob, type WorkerSession } from "./process-session.ts";
 
@@ -29,15 +29,22 @@ function createAnthropicLlm(env: { ANTHROPIC_API_KEY: string; ANTHROPIC_BASE_URL
       });
       return {
         stop_reason: response.stop_reason ?? "end_turn",
-        content: response.content.flatMap((part) => {
-          if (part.type === "text") {
-            return [{ type: "text" as const, text: part.text }];
-          }
-          if (part.type === "tool_use") {
-            return [{ type: "tool_use" as const, id: part.id, name: part.name, input: part.input }];
-          }
-          return [];
-        }),
+        content: response.content.flatMap(
+          (
+            part,
+          ): Array<
+            | { type: "text"; text: string }
+            | { type: "tool_use"; id: string; name: string; input: unknown }
+          > => {
+            if (part.type === "text") {
+              return [{ type: "text", text: part.text }];
+            }
+            if (part.type === "tool_use") {
+              return [{ type: "tool_use", id: part.id, name: part.name, input: part.input }];
+            }
+            return [];
+          },
+        ),
         usage: {
           input_tokens: response.usage.input_tokens,
           output_tokens: response.usage.output_tokens,

@@ -13,6 +13,7 @@
     "sourceMap": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true
   }

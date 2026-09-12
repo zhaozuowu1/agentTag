@@ -6,7 +6,7 @@ import { createFeishuClient } from "@agenttag/feishu";
 import { serve } from "@hono/node-server";
 import { Queue } from "bullmq";
 import { Hono } from "hono";
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 import { ulid } from "ulid";
 import {
   eventVerificationToken,

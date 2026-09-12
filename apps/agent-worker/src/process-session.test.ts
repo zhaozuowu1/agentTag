@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { processSessionJob } from "./process-session.ts";
+import { processSessionJob, type WorkerSession } from "./process-session.ts";
 import type { LlmClient } from "@agenttag/runtime";
 
-function session() {
+function session(): WorkerSession {
   return {
     id: "sess_1",
     tenantKey: "tenant_demo",
@@ -10,8 +10,8 @@ function session() {
     threadId: "omt_1",
     startedByOpenId: "ou_user",
     checklistMessageId: "om_card",
-    status: "running" as const,
-    transcript: [{ type: "user" as const, openId: "ou_user", text: "总结本群未关闭事项", at: "t" }],
+    status: "running",
+    transcript: [{ type: "user", openId: "ou_user", text: "总结本群未关闭事项", at: "t" }],
   };
 }
 
