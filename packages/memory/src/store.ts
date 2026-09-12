@@ -30,7 +30,22 @@ export interface UpsertMemoryInput {
 export interface MemoryStore {
   list(input: { tenantKey: string; chatId: string }): Promise<MemoryEntry[]>;
   upsert(input: UpsertMemoryInput): Promise<MemoryEntry>;
-  delete(id: string): Promise<void>;
+  delete(input: { tenantKey: string; chatId: string; id: string }): Promise<void>;
+}
+
+const MEMORY_SCOPE_ERROR = "memory does not belong to this chat";
+
+function assertMemoryBelongsToChat(
+  entry: Pick<MemoryEntry, "tenantKey" | "chatId"> | undefined,
+  tenantKey: string,
+  chatId: string | null,
+): void {
+  if (!entry) {
+    return;
+  }
+  if (entry.tenantKey !== tenantKey || entry.chatId !== chatId) {
+    throw new Error(MEMORY_SCOPE_ERROR);
+  }
 }
 
 export function createMemoryStore(seed: MemoryEntry[] = []): MemoryStore {
@@ -50,6 +65,7 @@ export function createMemoryStore(seed: MemoryEntry[] = []): MemoryStore {
         throw new Error("workspace memory writes are not allowed for this chat");
       }
       const id = input.id ?? randomUUID();
+      assertMemoryBelongsToChat(entries.get(id), input.tenantKey, input.chatId);
       const entry: MemoryEntry = {
         id,
         tenantKey: input.tenantKey,
@@ -64,8 +80,13 @@ export function createMemoryStore(seed: MemoryEntry[] = []): MemoryStore {
       entries.set(id, entry);
       return entry;
     },
-    async delete(id) {
-      entries.delete(id);
+    async delete(input) {
+      const existing = entries.get(input.id);
+      if (!existing) {
+        return;
+      }
+      assertMemoryBelongsToChat(existing, input.tenantKey, input.chatId);
+      entries.delete(input.id);
     },
   };
 }
@@ -92,6 +113,14 @@ export function createDbMemoryStore(db: AppDb): MemoryStore {
         throw new Error("workspace memory writes are not allowed for this chat");
       }
       const id = input.id ?? randomUUID();
+      if (input.id) {
+        const existing = await db
+          .select({ tenantKey: memoryEntries.tenantKey, chatId: memoryEntries.chatId })
+          .from(memoryEntries)
+          .where(eq(memoryEntries.id, input.id))
+          .limit(1);
+        assertMemoryBelongsToChat(existing[0], input.tenantKey, input.chatId);
+      }
       const entry: MemoryEntry = {
         id,
         tenantKey: input.tenantKey,
@@ -123,11 +152,32 @@ export function createDbMemoryStore(db: AppDb): MemoryStore {
             kind: entry.kind,
             updatedAt: entry.updatedAt,
           },
+          setWhere: and(
+            eq(memoryEntries.tenantKey, entry.tenantKey),
+            eq(memoryEntries.chatId, entry.chatId ?? ""),
+          ),
         });
       return entry;
     },
-    async delete(id) {
-      await db.delete(memoryEntries).where(eq(memoryEntries.id, id));
+    async delete(input) {
+      const existing = await db
+        .select({ tenantKey: memoryEntries.tenantKey, chatId: memoryEntries.chatId })
+        .from(memoryEntries)
+        .where(eq(memoryEntries.id, input.id))
+        .limit(1);
+      if (existing.length === 0) {
+        return;
+      }
+      assertMemoryBelongsToChat(existing[0], input.tenantKey, input.chatId);
+      await db
+        .delete(memoryEntries)
+        .where(
+          and(
+            eq(memoryEntries.id, input.id),
+            eq(memoryEntries.tenantKey, input.tenantKey),
+            eq(memoryEntries.chatId, input.chatId),
+          ),
+        );
     },
   };
 }

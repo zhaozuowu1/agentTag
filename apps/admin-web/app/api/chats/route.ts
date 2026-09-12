@@ -115,6 +115,8 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "缺少 memoryId" }, { status: 400 });
   }
   const database = db();
-  await database.delete(memoryEntries).where(eq(memoryEntries.id, memoryId));
+  await database
+    .delete(memoryEntries)
+    .where(and(eq(memoryEntries.id, memoryId), eq(memoryEntries.tenantKey, tenantKey)));
   return NextResponse.json(await snapshot(database, tenantKey));
 }

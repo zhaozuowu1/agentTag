@@ -52,7 +52,7 @@ export function createMemoryTools(store: MemoryStore, ctx: { tenantKey: string; 
     memory_delete: async (input: unknown) => {
       const body = (input ?? {}) as { id?: string };
       if (body.id) {
-        await store.delete(body.id);
+        await store.delete({ tenantKey: ctx.tenantKey, chatId: ctx.chatId, id: body.id });
       }
       return JSON.stringify({ ok: true });
     },
