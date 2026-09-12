@@ -121,6 +121,33 @@ describe("createGatewayApp webhook auth", () => {
     expect(res.status).toBe(403);
     expect(seen).toHaveLength(0);
   });
+
+  it("accepts an encrypted url_verification challenge without signature headers", async () => {
+    const seen: unknown[] = [];
+    const app = createGatewayApp({
+      encryptKey: ENCRYPT_KEY,
+      verificationToken: VERIFICATION_TOKEN,
+      onEvent: async (payload) => {
+        seen.push(payload);
+      },
+    });
+    const encrypt = encryptFeishuPayload(
+      ENCRYPT_KEY,
+      JSON.stringify({
+        challenge: "ajls384kdjx98xx",
+        token: VERIFICATION_TOKEN,
+        type: "url_verification",
+      }),
+    );
+    const res = await app.request("/feishu/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ encrypt }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ challenge: "ajls384kdjx98xx" });
+    expect(seen).toHaveLength(0);
+  });
 });
 
 describe("createGatewayApp event ack", () => {

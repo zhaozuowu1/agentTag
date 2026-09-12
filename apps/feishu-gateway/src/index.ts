@@ -30,15 +30,6 @@ export function createGatewayApp(options: {
   app.get("/health", (c) => c.json({ ok: true }));
   app.post("/feishu/events", async (c) => {
     const rawText = await c.req.text();
-    if (options.encryptKey) {
-      const timestamp = c.req.header("X-Lark-Request-Timestamp") ?? "";
-      const nonce = c.req.header("X-Lark-Request-Nonce") ?? "";
-      const signature = c.req.header("X-Lark-Signature") ?? "";
-      const expected = feishuRequestSignature(timestamp, nonce, options.encryptKey, rawText);
-      if (!signature || !signaturesMatch(expected, signature)) {
-        return c.json({ error: "invalid signature" }, 401);
-      }
-    }
     let raw: Record<string, unknown>;
     try {
       raw = JSON.parse(rawText) as Record<string, unknown>;
@@ -52,7 +43,17 @@ export function createGatewayApp(options: {
     if (options.verificationToken && eventVerificationToken(payload) !== options.verificationToken) {
       return c.json({ error: "invalid verification token" }, 403);
     }
-    if (payload.type === "url_verification" || typeof payload.challenge === "string") {
+    const isUrlVerification = payload.type === "url_verification";
+    if (!isUrlVerification && options.encryptKey) {
+      const timestamp = c.req.header("X-Lark-Request-Timestamp") ?? "";
+      const nonce = c.req.header("X-Lark-Request-Nonce") ?? "";
+      const signature = c.req.header("X-Lark-Signature") ?? "";
+      const expected = feishuRequestSignature(timestamp, nonce, options.encryptKey, rawText);
+      if (!signature || !signaturesMatch(expected, signature)) {
+        return c.json({ error: "invalid signature" }, 401);
+      }
+    }
+    if (isUrlVerification) {
       return c.json({ challenge: payload.challenge });
     }
     setImmediate(() => {
