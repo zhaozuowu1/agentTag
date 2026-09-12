@@ -17,6 +17,7 @@ import {
 import { handleBotAdded } from "./handlers/bot-added.ts";
 import { handleMessageReceive } from "./handlers/message-receive.ts";
 import { parseBotAdded, parseReceiveMessage } from "./parse-event.ts";
+import { DEFAULT_EVENT_RETRY, runWithRetry, type RetryOptions } from "./retry.ts";
 import { createGatewayStore } from "./store.ts";
 
 const SESSION_QUEUE = "agenttag";
@@ -25,6 +26,7 @@ export function createGatewayApp(options: {
   encryptKey: string;
   verificationToken?: string;
   onEvent: (payload: Record<string, unknown>) => Promise<void>;
+  retry?: RetryOptions;
 }) {
   const app = new Hono();
   app.get("/health", (c) => c.json({ ok: true }));
@@ -57,7 +59,7 @@ export function createGatewayApp(options: {
       return c.json({ challenge: payload.challenge });
     }
     setImmediate(() => {
-      void options.onEvent(payload).catch((error) => {
+      void runWithRetry(() => options.onEvent(payload), options.retry ?? DEFAULT_EVENT_RETRY).catch((error) => {
         console.error("feishu event handler failed", error);
       });
     });

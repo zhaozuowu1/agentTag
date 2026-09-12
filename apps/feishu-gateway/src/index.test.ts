@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { encryptFeishuPayload } from "./encrypt.ts";
 import { createGatewayApp } from "./index.ts";
 
@@ -165,5 +165,26 @@ describe("createGatewayApp event ack", () => {
     order.push("http-returned");
     expect(res.status).toBe(200);
     expect(order[0]).toBe("http-returned");
+  });
+
+  it("retries onEvent after 200 when the handler fails", async () => {
+    let attempts = 0;
+    const app = createGatewayApp({
+      encryptKey: ENCRYPT_KEY,
+      verificationToken: VERIFICATION_TOKEN,
+      retry: { attempts: 3, delayMs: 0 },
+      onEvent: async () => {
+        attempts += 1;
+        if (attempts < 3) {
+          throw new Error("transient feishu error");
+        }
+      },
+    });
+    const req = signedEncryptRequest(eventPayload(), "nonce-retry");
+    const res = await app.request("/feishu/events", { method: "POST", ...req });
+    expect(res.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(attempts).toBe(3);
+    });
   });
 });
