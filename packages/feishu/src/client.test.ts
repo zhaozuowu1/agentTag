@@ -61,6 +61,29 @@ describe("replyInThread", () => {
   });
 });
 
+describe("botOpenId", () => {
+  it("reads open_id from the top-level bot field in GET /bot/v3/info", async () => {
+    const officialBody = {
+      code: 0,
+      msg: "ok",
+      bot: {
+        activate_status: 2,
+        app_name: "name",
+        avatar_url: "https://sf1-ttcdn-tos.pstatp.com/img/lark.avatar/xxxx",
+        ip_white_list: [] as string[],
+        open_id: "ou_bot_official",
+      },
+    };
+    const { fetchImpl, calls } = recordFetch(
+      () => new Response(JSON.stringify(officialBody), { status: 200 }),
+    );
+    const client = clientWith(fetchImpl);
+
+    await expect(client.botOpenId()).resolves.toBe("ou_bot_official");
+    expect(new URL(calls[0]!.url).pathname).toBe("/open-apis/bot/v3/info");
+  });
+});
+
 describe("patchCard", () => {
   it("PATCHes /im/v1/messages/:id with only { content }", async () => {
     const { fetchImpl, calls } = recordFetch(

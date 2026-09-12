@@ -38,7 +38,7 @@ export function createFeishuClient(options: CreateFeishuClientOptions): FeishuCl
     return json.tenant_access_token;
   }
 
-  async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async function requestJson<T>(method: string, path: string, body?: unknown): Promise<T> {
     const token = await tenantToken();
     const res = await fetchImpl(`${baseUrl}${path}`, {
       method,
@@ -48,10 +48,15 @@ export function createFeishuClient(options: CreateFeishuClientOptions): FeishuCl
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    const json = (await res.json()) as FeishuEnvelope<T>;
+    const json = (await res.json()) as FeishuEnvelope<unknown> & T;
     if (!res.ok || json.code !== 0) {
       throw new FeishuApiError(json.msg ?? "feishu api error", json.code ?? res.status, res.status);
     }
+    return json;
+  }
+
+  async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const json = await requestJson<FeishuEnvelope<T>>(method, path, body);
     return json.data as T;
   }
 
@@ -60,8 +65,12 @@ export function createFeishuClient(options: CreateFeishuClientOptions): FeishuCl
       if (cachedBotOpenId) {
         return cachedBotOpenId;
       }
-      const data = await api<{ bot?: { open_id?: string }; open_id?: string }>("GET", "/open-apis/bot/v3/info");
-      const openId = data.bot?.open_id ?? data.open_id;
+      // GET /bot/v3/info puts `bot` on the envelope, not under `data`.
+      const json = await requestJson<{ bot?: { open_id?: string }; data?: { bot?: { open_id?: string }; open_id?: string } }>(
+        "GET",
+        "/open-apis/bot/v3/info",
+      );
+      const openId = json.bot?.open_id ?? json.data?.bot?.open_id ?? json.data?.open_id;
       if (!openId) {
         throw new FeishuApiError("bot open_id missing", 0, 200);
       }
