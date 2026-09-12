@@ -50,6 +50,7 @@ export interface MessageReceiveDeps {
   enqueue(job: { sessionId: string }): Promise<void>;
   newId: () => string;
   getBudget(tenantKey: string): Promise<{ usedUsd: number; limitUsd: number | null }>;
+  releaseEvent(eventId: string): Promise<void>;
 }
 
 export async function handleMessageReceive(
@@ -60,6 +61,19 @@ export async function handleMessageReceive(
   if (!claimed) {
     return;
   }
+
+  try {
+    await handleClaimedMessage(event, deps);
+  } catch (error) {
+    await deps.releaseEvent(event.eventId);
+    throw error;
+  }
+}
+
+async function handleClaimedMessage(
+  event: ReceiveMessageEvent,
+  deps: MessageReceiveDeps,
+): Promise<void> {
 
   const chat = await deps.getChat(event.chatId);
   const grant = await deps.lookupGrant(event.tenantKey, event.chatId);

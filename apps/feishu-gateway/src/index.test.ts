@@ -23,6 +23,22 @@ function eventPayload(token = VERIFICATION_TOKEN) {
   };
 }
 
+function signedEncryptRequest(payload: Record<string, unknown>, nonce: string) {
+  const inner = JSON.stringify(payload);
+  const encrypt = encryptFeishuPayload(ENCRYPT_KEY, inner);
+  const body = JSON.stringify({ encrypt });
+  const timestamp = "1710000000";
+  return {
+    body,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Lark-Request-Timestamp": timestamp,
+      "X-Lark-Request-Nonce": nonce,
+      "X-Lark-Signature": sign(timestamp, nonce, body),
+    },
+  };
+}
+
 describe("createGatewayApp webhook auth", () => {
   it("rejects plaintext events when an encrypt key is configured", async () => {
     const seen: unknown[] = [];
@@ -104,5 +120,23 @@ describe("createGatewayApp webhook auth", () => {
     });
     expect(res.status).toBe(403);
     expect(seen).toHaveLength(0);
+  });
+});
+
+describe("createGatewayApp event ack", () => {
+  it("returns 200 before onEvent finishes", async () => {
+    const order: string[] = [];
+    const app = createGatewayApp({
+      encryptKey: ENCRYPT_KEY,
+      verificationToken: VERIFICATION_TOKEN,
+      onEvent: async () => {
+        order.push("handler");
+      },
+    });
+    const req = signedEncryptRequest(eventPayload(), "nonce-ack");
+    const res = await app.request("/feishu/events", { method: "POST", ...req });
+    order.push("http-returned");
+    expect(res.status).toBe(200);
+    expect(order[0]).toBe("http-returned");
   });
 });

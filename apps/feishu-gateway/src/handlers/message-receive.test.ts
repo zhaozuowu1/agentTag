@@ -59,6 +59,9 @@ function createDeps(overrides: Partial<MessageReceiveDeps> = {}) {
     },
     newId: () => "sess_1",
     getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+    releaseEvent: async (eventId) => {
+      claimed.delete(eventId);
+    },
     ...overrides,
   };
   return deps;
@@ -164,6 +167,31 @@ describe("handleMessageReceive", () => {
     expect(deps.enqueued).toEqual([]);
     const card = deps.replies[0]?.card as { header?: { title?: { content?: string } } };
     expect(card.header?.title?.content).toBe("本月额度已用完");
+  });
+
+  it("releases the dedup key when handling fails so a retry can proceed", async () => {
+    const claimed = new Set<string>();
+    const claimEvent = async (eventId: string) => {
+      if (claimed.has(eventId)) {
+        return false;
+      }
+      claimed.add(eventId);
+      return true;
+    };
+    const releaseEvent = async (eventId: string) => {
+      claimed.delete(eventId);
+    };
+    const failing = createDeps({
+      claimEvent,
+      releaseEvent,
+      getChat: async () => {
+        throw new Error("feishu timeout");
+      },
+    });
+    await expect(handleMessageReceive(event, failing)).rejects.toThrow(/timeout/);
+    const retry = createDeps({ claimEvent, releaseEvent });
+    await handleMessageReceive(event, retry);
+    expect(retry.enqueued).toEqual([{ sessionId: "sess_1" }]);
   });
 });
 

@@ -55,7 +55,11 @@ export function createGatewayApp(options: {
     if (payload.type === "url_verification" || typeof payload.challenge === "string") {
       return c.json({ challenge: payload.challenge });
     }
-    await options.onEvent(payload);
+    setImmediate(() => {
+      void options.onEvent(payload).catch((error) => {
+        console.error("feishu event handler failed", error);
+      });
+    });
     return c.json({ code: 0 });
   });
   return app;
@@ -64,6 +68,10 @@ export function createGatewayApp(options: {
 export async function claimEvent(redis: Redis, eventId: string): Promise<boolean> {
   const ok = await redis.set(`feishu:event:${eventId}`, "1", "EX", 86400, "NX");
   return ok === "OK";
+}
+
+export async function releaseEvent(redis: Redis, eventId: string): Promise<void> {
+  await redis.del(`feishu:event:${eventId}`);
 }
 
 export async function startGateway() {
@@ -92,14 +100,19 @@ export async function startGateway() {
         if (!claimed) {
           return;
         }
-        await store.ensureTenant(parsed.tenantKey);
-        await handleBotAdded(parsed, {
-          getChat: (chatId) => feishu.getChat(chatId),
-          lookupGrant: (tenantKey, chatId) => store.lookupGrant(tenantKey, chatId),
-          sendText: async (chatId, text) => {
-            await feishu.sendText(chatId, text);
-          },
-        });
+        try {
+          await store.ensureTenant(parsed.tenantKey);
+          await handleBotAdded(parsed, {
+            getChat: (chatId) => feishu.getChat(chatId),
+            lookupGrant: (tenantKey, chatId) => store.lookupGrant(tenantKey, chatId),
+            sendText: async (chatId, text) => {
+              await feishu.sendText(chatId, text);
+            },
+          });
+        } catch (error) {
+          await releaseEvent(redis, parsed.eventId);
+          throw error;
+        }
         return;
       }
       if (eventType === "im.message.receive_v1") {
@@ -138,6 +151,7 @@ export async function startGateway() {
           },
           newId: () => ulid(),
           getBudget: (tenantKey) => store.getBudget(tenantKey),
+          releaseEvent: (eventId) => releaseEvent(redis, eventId),
         });
       }
     },
