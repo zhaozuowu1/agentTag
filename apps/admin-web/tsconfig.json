@@ -1,10 +1,16 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": ".",
-    "outDir": "dist",
+    "jsx": "preserve",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "plugins": [{ "name": "next" }],
+    "rootDir": ".",
+    "allowJs": true,
     "types": ["node"]
   },
-  "include": ["app/**/*.ts", "app/**/*.tsx"]
+  "include": ["app/**/*.ts", "app/**/*.tsx", "lib/**/*.ts", "next.config.ts", "next-env.d.ts"],
+  "exclude": ["node_modules"]
 }
