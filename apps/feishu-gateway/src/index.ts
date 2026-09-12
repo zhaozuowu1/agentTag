@@ -41,7 +41,12 @@ export function createGatewayApp(options: {
     if (options.encryptKey && typeof raw.encrypt !== "string") {
       return c.json({ error: "encrypted payload required" }, 400);
     }
-    const payload = unwrapFeishuBody(raw, options.encryptKey);
+    let payload: Record<string, unknown>;
+    try {
+      payload = unwrapFeishuBody(raw, options.encryptKey);
+    } catch {
+      return c.json({ error: "invalid encrypt" }, 400);
+    }
     if (options.verificationToken && eventVerificationToken(payload) !== options.verificationToken) {
       return c.json({ error: "invalid verification token" }, 403);
     }

@@ -148,6 +148,25 @@ describe("createGatewayApp webhook auth", () => {
     expect(await res.json()).toEqual({ challenge: "ajls384kdjx98xx" });
     expect(seen).toHaveLength(0);
   });
+
+  it("returns 400 when encrypt cannot be decrypted", async () => {
+    const seen: unknown[] = [];
+    const app = createGatewayApp({
+      encryptKey: ENCRYPT_KEY,
+      verificationToken: VERIFICATION_TOKEN,
+      onEvent: async (payload) => {
+        seen.push(payload);
+      },
+    });
+    const res = await app.request("/feishu/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ encrypt: "!!!!not-valid-ciphertext!!!!" }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid encrypt" });
+    expect(seen).toHaveLength(0);
+  });
 });
 
 describe("createGatewayApp event ack", () => {
