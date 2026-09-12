@@ -23,29 +23,48 @@ export function createGatewayStore(db: Db) {
       await db.insert(tenants).values({ tenantKey }).onConflictDoNothing();
     },
 
-    async findSession(input: { chatId: string; threadId: string | null }) {
-      if (!input.threadId) {
-        return null;
+    async findSession(input: { chatId: string; threadId: string | null; rootMessageId?: string | null }) {
+      if (input.threadId) {
+        const rows = await db
+          .select({
+            id: workingSessions.id,
+            status: workingSessions.status,
+          })
+          .from(workingSessions)
+          .where(
+            and(
+              eq(workingSessions.chatId, input.chatId),
+              eq(workingSessions.threadId, input.threadId),
+              inArray(workingSessions.status, ["running", "idle"]),
+            ),
+          )
+          .limit(1);
+        const row = rows[0];
+        if (row) {
+          return { id: row.id, status: row.status as "running" | "idle" };
+        }
       }
-      const rows = await db
-        .select({
-          id: workingSessions.id,
-          status: workingSessions.status,
-        })
-        .from(workingSessions)
-        .where(
-          and(
-            eq(workingSessions.chatId, input.chatId),
-            eq(workingSessions.threadId, input.threadId),
-            inArray(workingSessions.status, ["running", "idle"]),
-          ),
-        )
-        .limit(1);
-      const row = rows[0];
-      if (!row) {
-        return null;
+      if (input.rootMessageId) {
+        const rows = await db
+          .select({
+            id: workingSessions.id,
+            status: workingSessions.status,
+          })
+          .from(workingSessions)
+          .where(
+            and(
+              eq(workingSessions.chatId, input.chatId),
+              eq(workingSessions.rootMessageId, input.rootMessageId),
+              inArray(workingSessions.status, ["running", "idle"]),
+            ),
+          )
+          .limit(1);
+        const row = rows[0];
+        if (row) {
+          return { id: row.id, status: row.status as "running" | "idle" };
+        }
       }
-      return { id: row.id, status: row.status as "running" | "idle" };
+      return null;
     },
 
     async createSession(input: {

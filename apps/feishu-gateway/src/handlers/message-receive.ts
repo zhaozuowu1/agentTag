@@ -14,6 +14,7 @@ export interface ReceiveMessageEvent {
   chatId: string;
   messageId: string;
   threadId: string | null;
+  rootId: string | null;
   openId: string;
   text: string;
   mentionOpenIds: string[];
@@ -31,6 +32,7 @@ export interface MessageReceiveDeps {
   findSession(input: {
     chatId: string;
     threadId: string | null;
+    rootMessageId?: string | null;
   }): Promise<{ id: string; status: SessionStatus } | null>;
   createSession(input: {
     id: string;
@@ -46,6 +48,7 @@ export interface MessageReceiveDeps {
   archiveSession(sessionId: string): Promise<void>;
   replyInThread(messageId: string, card: unknown): Promise<{ messageId: string; threadId: string | null }>;
   sendText(chatId: string, text: string): Promise<void>;
+  sendCard(chatId: string, card: unknown): Promise<{ messageId: string }>;
   appendUserMessage(sessionId: string, openId: string, text: string): Promise<void>;
   enqueue(job: { sessionId: string }): Promise<void>;
   newId: () => string;
@@ -98,6 +101,7 @@ async function handleClaimedMessage(
   const existingSession = await deps.findSession({
     chatId: event.chatId,
     threadId: event.threadId,
+    rootMessageId: event.rootId ?? event.messageId,
   });
   const decision = routeMessage({
     chatId: event.chatId,
@@ -160,8 +164,8 @@ async function handleClaimedMessage(
     reply = await deps.replyInThread(event.messageId, card);
   } catch (error) {
     if (error instanceof FeishuApiError && error.code === 230071) {
-      await deps.sendText(event.chatId, "收到，正在处理。本群暂不支持话题，我会在群里继续回复。");
-      reply = { messageId: event.messageId, threadId: null };
+      const sent = await deps.sendCard(event.chatId, card);
+      reply = { messageId: sent.messageId, threadId: null };
     } else {
       throw error;
     }
@@ -172,7 +176,7 @@ async function handleClaimedMessage(
     tenantKey: event.tenantKey,
     chatId: event.chatId,
     threadId: reply.threadId ?? event.threadId,
-    rootMessageId: event.messageId,
+    rootMessageId: event.rootId ?? event.messageId,
     kind: reply.threadId ? "thread" : "chat",
     startedByOpenId: event.openId,
     checklistMessageId: reply.messageId,

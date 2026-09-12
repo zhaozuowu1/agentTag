@@ -21,6 +21,7 @@ export interface FeishuClient {
   ): Promise<{ messageId: string; threadId: string | null }>;
   patchCard(messageId: string, card: unknown): Promise<void>;
   sendText(chatId: string, text: string): Promise<{ messageId: string }>;
+  sendCard(chatId: string, card: unknown): Promise<{ messageId: string }>;
   getChat(chatId: string): Promise<{ chatType: FeishuChatType; external: boolean; name: string }>;
   listMessages(opts: {
     container: "chat" | "thread";

@@ -110,6 +110,19 @@ export function createFeishuClient(options: CreateFeishuClientOptions): FeishuCl
       return { messageId: data.message_id };
     },
 
+    async sendCard(chatId, card) {
+      const data = await api<{ message_id: string }>(
+        "POST",
+        "/open-apis/im/v1/messages?receive_id_type=chat_id",
+        {
+          receive_id: chatId,
+          msg_type: "interactive",
+          content: stringifyCard(card),
+        },
+      );
+      return { messageId: data.message_id };
+    },
+
     async getChat(chatId) {
       const data = await api<{
         chat_mode?: string;

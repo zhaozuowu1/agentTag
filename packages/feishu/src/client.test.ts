@@ -84,6 +84,30 @@ describe("botOpenId", () => {
   });
 });
 
+describe("sendCard", () => {
+  it("POSTs an interactive card to the chat and returns the bot message id", async () => {
+    const { fetchImpl, calls } = recordFetch(
+      () =>
+        new Response(JSON.stringify({ code: 0, data: { message_id: "om_card_sent" } }), { status: 200 }),
+    );
+    const client = clientWith(fetchImpl);
+    const result = await client.sendCard(
+      "oc_auth",
+      progressCard({
+        title: "收到，正在处理",
+        statusText: "进行中",
+        checklist: [],
+      }),
+    );
+    expect(result).toEqual({ messageId: "om_card_sent" });
+    expect(calls[0]?.method).toBe("POST");
+    expect(new URL(calls[0]!.url).pathname).toBe("/open-apis/im/v1/messages");
+    const body = JSON.parse(await calls[0]!.text()) as Record<string, unknown>;
+    expect(body.receive_id).toBe("oc_auth");
+    expect(body.msg_type).toBe("interactive");
+  });
+});
+
 describe("patchCard", () => {
   it("PATCHes /im/v1/messages/:id with only { content }", async () => {
     const { fetchImpl, calls } = recordFetch(

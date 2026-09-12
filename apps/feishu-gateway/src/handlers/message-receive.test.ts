@@ -8,6 +8,7 @@ const event: ReceiveMessageEvent = {
   chatId: "oc_auth",
   messageId: "om_1",
   threadId: null,
+  rootId: null,
   openId: "ou_user",
   text: "@_user_1 总结本群未关闭事项",
   mentionOpenIds: ["ou_bot"],
@@ -53,6 +54,7 @@ function createDeps(overrides: Partial<MessageReceiveDeps> = {}) {
       return { messageId: "om_card", threadId: "omt_new" };
     },
     sendText: async () => {},
+    sendCard: async () => ({ messageId: "om_fallback_card" }),
     appendUserMessage: async () => {},
     enqueue: async (job) => {
       enqueued.push(job);
@@ -192,6 +194,58 @@ describe("handleMessageReceive", () => {
     const retry = createDeps({ claimEvent, releaseEvent });
     await handleMessageReceive(event, retry);
     expect(retry.enqueued).toEqual([{ sessionId: "sess_1" }]);
+  });
+
+  it("sends a group card when reply_in_thread returns 230071", async () => {
+    const { FeishuApiError } = await import("@agenttag/feishu");
+    const created: Array<{ checklistMessageId: string | null; threadId: string | null; rootMessageId: string }> = [];
+    const deps = createDeps({
+      replyInThread: async () => {
+        throw new FeishuApiError("topic disabled", 230071, 400);
+      },
+      sendCard: async () => ({ messageId: "om_bot_card" }),
+      createSession: async (input) => {
+        created.push({
+          checklistMessageId: input.checklistMessageId,
+          threadId: input.threadId,
+          rootMessageId: input.rootMessageId,
+        });
+        return { id: input.id, status: "running" };
+      },
+    });
+    await handleMessageReceive(event, deps);
+    expect(created).toEqual([
+      { checklistMessageId: "om_bot_card", threadId: null, rootMessageId: "om_1" },
+    ]);
+    expect(deps.enqueued).toEqual([{ sessionId: "sess_1" }]);
+  });
+
+  it("looks up an in-chat session by root_message_id when threadId is missing", async () => {
+    const lookedUp: Array<{ chatId: string; threadId: string | null; rootMessageId?: string | null }> = [];
+    const appended: string[] = [];
+    const deps = createDeps({
+      findSession: async (input) => {
+        lookedUp.push(input);
+        return { id: "sess_root", status: "idle" };
+      },
+      appendUserMessage: async (_sessionId, _openId, text) => {
+        appended.push(text);
+      },
+    });
+    await handleMessageReceive(
+      {
+        ...event,
+        eventId: "ev_steer_root",
+        threadId: null,
+        rootId: "om_root",
+        mentionOpenIds: [],
+        text: "把结论改成表格",
+      },
+      deps,
+    );
+    expect(lookedUp[0]).toMatchObject({ chatId: "oc_auth", rootMessageId: "om_root" });
+    expect(appended).toEqual(["把结论改成表格"]);
+    expect(deps.enqueued).toEqual([{ sessionId: "sess_root" }]);
   });
 });
 

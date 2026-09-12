@@ -133,6 +133,7 @@ export async function startGateway() {
           sendText: async (chatId, text) => {
             await feishu.sendText(chatId, text);
           },
+          sendCard: async (chatId, card) => feishu.sendCard(chatId, card),
           appendUserMessage: (sessionId, openId, text) => store.appendUserMessage(sessionId, openId, text),
           enqueue: async (job) => {
             try {

@@ -8,6 +8,7 @@ function stubClient(calls: Array<{ container: string; id: string }>): FeishuClie
     replyInThread: async () => ({ messageId: "om_x", threadId: "omt_x" }),
     patchCard: async () => {},
     sendText: async () => ({ messageId: "om_t" }),
+    sendCard: async () => ({ messageId: "om_card" }),
     getChat: async () => ({ chatType: "private", external: false, name: "群" }),
     listMessages: async (opts) => {
       calls.push({ container: opts.container, id: opts.id });

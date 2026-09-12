@@ -14,6 +14,8 @@ export function parseReceiveMessage(payload: {
       message_id?: string;
       chat_id?: string;
       thread_id?: string;
+      root_id?: string;
+      parent_id?: string;
       content?: string;
       mentions?: Array<{ id?: string | { open_id?: string } }>;
     };
@@ -31,6 +33,7 @@ export function parseReceiveMessage(payload: {
     chatId: message.chat_id,
     messageId: message.message_id,
     threadId: message.thread_id || null,
+    rootId: message.root_id || message.parent_id || null,
     openId,
     text: extractText(message.content),
     mentionOpenIds: (message.mentions ?? []).map(mentionOpenId).filter((id): id is string => Boolean(id)),
