@@ -17,6 +17,8 @@ pnpm test
 pnpm dev
 ```
 
+各 app 的 `dev` 脚本用 Node 22 的 `--env-file=../../.env` 加载仓库根目录 `.env`（管理台、网关、Worker 都如此）。请先复制 `.env.example` 再启动。
+
 管理台默认端口 3001：`pnpm --filter @agenttag/admin-web dev`，用 `ADMIN_TOKEN` Bearer 登录。网关默认 3000：`pnpm --filter @agenttag/feishu-gateway dev`。
 
 国内网络请同时配置 `ANTHROPIC_BASE_URL` 与 npm registry。
