@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, sum } from "drizzle-orm";
+import { and, eq, gte, inArray, sql, sum } from "drizzle-orm";
 import { authorizedChats, createDb, tenants, usageEvents, workingSessions } from "@agenttag/db";
 import { tokensToUsd } from "@agenttag/domain";
 
@@ -89,21 +89,13 @@ export function createGatewayStore(db: Db) {
     },
 
     async appendUserMessage(sessionId: string, openId: string, text: string) {
-      const rows = await db.select().from(workingSessions).where(eq(workingSessions.id, sessionId)).limit(1);
-      const row = rows[0];
-      if (!row) {
-        return;
-      }
-      const transcript = Array.isArray(row.transcript) ? row.transcript : [];
+      const event = [{ type: "user", openId, text, at: new Date().toISOString() }];
       await db
         .update(workingSessions)
         .set({
           status: "running",
           lastActivityAt: new Date(),
-          transcript: [
-            ...transcript,
-            { type: "user", openId, text, at: new Date().toISOString() },
-          ],
+          transcript: sql`coalesce(${workingSessions.transcript}, '[]'::jsonb) || ${JSON.stringify(event)}::jsonb`,
         })
         .where(eq(workingSessions.id, sessionId));
     },

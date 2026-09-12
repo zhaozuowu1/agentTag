@@ -5,7 +5,7 @@ import { createFeishuMessageTools, createMemoryTools, memoryPromptBlock, type Ll
 import { createDbMemoryStore } from "@agenttag/memory";
 import Anthropic from "@anthropic-ai/sdk";
 import { Worker } from "bullmq";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import Redis from "ioredis";
 import { ulid } from "ulid";
 import { processSessionJob, type WorkerSession } from "./process-session.ts";
@@ -83,7 +83,10 @@ export async function startWorker() {
         { sessionId },
         {
           llm,
-          loadSession: async () => row as unknown as WorkerSession,
+          loadSession: async (id) => {
+            const latest = await db.select().from(workingSessions).where(eq(workingSessions.id, id)).limit(1);
+            return (latest[0] as unknown as WorkerSession | undefined) ?? null;
+          },
           patchCard: (messageId, card) => feishu.patchCard(messageId, card),
           recordUsage: async (usage) => {
             await db.insert(usageEvents).values({
@@ -107,13 +110,21 @@ export async function startWorker() {
               success: audit.success,
             });
           },
-          markSession: async (id, status, transcript) => {
+          markSession: async (id, status) => {
             await db
               .update(workingSessions)
               .set({
                 status,
                 lastActivityAt: new Date(),
-                ...(transcript ? { transcript } : {}),
+              })
+              .where(eq(workingSessions.id, id));
+          },
+          appendEvents: async (id, events) => {
+            await db
+              .update(workingSessions)
+              .set({
+                lastActivityAt: new Date(),
+                transcript: sql`coalesce(${workingSessions.transcript}, '[]'::jsonb) || ${JSON.stringify(events)}::jsonb`,
               })
               .where(eq(workingSessions.id, id));
           },

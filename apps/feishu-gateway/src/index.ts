@@ -122,7 +122,19 @@ export async function startGateway() {
           },
           appendUserMessage: (sessionId, openId, text) => store.appendUserMessage(sessionId, openId, text),
           enqueue: async (job) => {
-            await queue.add("session.run", job);
+            try {
+              await queue.add("session.run", job, {
+                jobId: job.sessionId,
+                removeOnComplete: true,
+                removeOnFail: true,
+              });
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              if (/already exists|Job is already/i.test(message)) {
+                return;
+              }
+              throw error;
+            }
           },
           newId: () => ulid(),
           getBudget: (tenantKey) => store.getBudget(tenantKey),
