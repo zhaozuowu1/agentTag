@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, sql, sum } from "drizzle-orm";
+import { and, eq, gte, inArray, or, sql, sum } from "drizzle-orm";
 import { authorizedChats, createDb, tenants, usageEvents, workingSessions } from "@agenttag/db";
 import { tokensToUsd } from "@agenttag/domain";
 
@@ -54,7 +54,10 @@ export function createGatewayStore(db: Db) {
           .where(
             and(
               eq(workingSessions.chatId, input.chatId),
-              eq(workingSessions.rootMessageId, input.rootMessageId),
+              or(
+                eq(workingSessions.rootMessageId, input.rootMessageId),
+                eq(workingSessions.checklistMessageId, input.rootMessageId),
+              ),
               inArray(workingSessions.status, ["running", "idle"]),
             ),
           )

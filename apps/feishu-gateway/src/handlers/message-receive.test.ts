@@ -247,6 +247,75 @@ describe("handleMessageReceive", () => {
     expect(appended).toEqual(["把结论改成表格"]);
     expect(deps.enqueued).toEqual([{ sessionId: "sess_root" }]);
   });
+
+  it("steers a reply to the sendCard fallback when root_id is the bot card id", async () => {
+    const { FeishuApiError } = await import("@agenttag/feishu");
+    const created: Array<{
+      id: string;
+      status: "running" | "idle";
+      threadId: string | null;
+      rootMessageId: string;
+      checklistMessageId: string | null;
+    }> = [];
+    const appended: string[] = [];
+    const findSession: MessageReceiveDeps["findSession"] = async (input) => {
+      if (input.threadId) {
+        const byThread = created.find(
+          (session) => session.threadId === input.threadId && (session.status === "running" || session.status === "idle"),
+        );
+        if (byThread) {
+          return { id: byThread.id, status: byThread.status };
+        }
+      }
+      if (input.rootMessageId) {
+        const byKey = created.find(
+          (session) =>
+            (session.status === "running" || session.status === "idle") &&
+            (session.rootMessageId === input.rootMessageId || session.checklistMessageId === input.rootMessageId),
+        );
+        if (byKey) {
+          return { id: byKey.id, status: byKey.status };
+        }
+      }
+      return null;
+    };
+    const deps = createDeps({
+      replyInThread: async () => {
+        throw new FeishuApiError("topic disabled", 230071, 400);
+      },
+      sendCard: async () => ({ messageId: "om_bot_card" }),
+      createSession: async (input) => {
+        const record = {
+          id: input.id,
+          status: "running" as const,
+          threadId: input.threadId,
+          rootMessageId: input.rootMessageId,
+          checklistMessageId: input.checklistMessageId,
+        };
+        created.push(record);
+        return { id: input.id, status: "running" as const };
+      },
+      findSession,
+      appendUserMessage: async (_sessionId, _openId, text) => {
+        appended.push(text);
+      },
+    });
+    await handleMessageReceive(event, deps);
+    await handleMessageReceive(
+      {
+        ...event,
+        eventId: "ev_card_reply",
+        messageId: "om_follow",
+        threadId: null,
+        rootId: "om_bot_card",
+        mentionOpenIds: [],
+        text: "把结论改成表格",
+      },
+      deps,
+    );
+    expect(appended).toEqual(["把结论改成表格"]);
+    expect(deps.enqueued).toEqual([{ sessionId: "sess_1" }, { sessionId: "sess_1" }]);
+  });
 });
 
 describe("progressCard copy", () => {
