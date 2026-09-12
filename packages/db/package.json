@@ -9,12 +9,18 @@
   "scripts": {
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "migrate": "echo 'db migrate not implemented yet' && exit 1"
+    "generate": "drizzle-kit generate",
+    "migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
-    "@agenttag/domain": "workspace:*"
+    "@agenttag/domain": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
+    "@types/node": "^22.20.2",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.20.5",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }
