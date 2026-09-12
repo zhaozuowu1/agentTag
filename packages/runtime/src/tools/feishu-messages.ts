@@ -8,7 +8,6 @@ export const FEISHU_MESSAGE_TOOL_DEFS = [
       type: "object",
       properties: {
         container: { type: "string", enum: ["chat", "thread"] },
-        id: { type: "string" },
         pageSize: { type: "number" },
       },
     },
@@ -21,20 +20,32 @@ export const FEISHU_MESSAGE_TOOL_DEFS = [
       properties: {
         query: { type: "string" },
         container: { type: "string", enum: ["chat", "thread"] },
-        id: { type: "string" },
       },
       required: ["query"],
     },
   },
 ] as const;
 
+function resolveContainer(
+  fallback: { chatId: string; threadId: string | null },
+  container: "chat" | "thread" | undefined,
+): { container: "chat" | "thread"; id: string } {
+  if (container === "thread" && fallback.threadId) {
+    return { container: "thread", id: fallback.threadId };
+  }
+  return { container: "chat", id: fallback.chatId };
+}
+
 export function createFeishuMessageTools(client: FeishuClient, fallback: { chatId: string; threadId: string | null }) {
   return {
     feishu_list_messages: async (input: unknown) => {
-      const opts = (input ?? {}) as { container?: "chat" | "thread"; id?: string; pageSize?: number };
-      const container = opts.container ?? (fallback.threadId ? "thread" : "chat");
-      const id = opts.id ?? (container === "thread" ? fallback.threadId ?? fallback.chatId : fallback.chatId);
-      const messages = await client.listMessages({ container, id, pageSize: opts.pageSize ?? 50 });
+      const opts = (input ?? {}) as { container?: "chat" | "thread"; pageSize?: number };
+      const target = resolveContainer(fallback, opts.container);
+      const messages = await client.listMessages({
+        container: target.container,
+        id: target.id,
+        pageSize: opts.pageSize ?? 50,
+      });
       return JSON.stringify(
         messages.map((message) => ({
           messageId: message.messageId,
@@ -45,11 +56,10 @@ export function createFeishuMessageTools(client: FeishuClient, fallback: { chatI
       );
     },
     feishu_search_messages: async (input: unknown) => {
-      const opts = (input ?? {}) as { query?: string; container?: "chat" | "thread"; id?: string };
+      const opts = (input ?? {}) as { query?: string; container?: "chat" | "thread" };
       const query = (opts.query ?? "").toLowerCase();
       const raw = await createFeishuMessageTools(client, fallback).feishu_list_messages({
         container: opts.container,
-        id: opts.id,
       });
       const messages = JSON.parse(raw) as Array<{ text: string }>;
       return JSON.stringify(messages.filter((message) => message.text.toLowerCase().includes(query)));
