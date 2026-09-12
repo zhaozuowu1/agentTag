@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789174870506,
+      "tag": "0000_spicy_doctor_spectrum",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789179000000,
+      "tag": "0001_nullable_monthly_limit",
+      "breakpoints": true
+    }
+  ]
+}

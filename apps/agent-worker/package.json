@@ -1,0 +1,30 @@
+{
+  "name": "@agenttag/agent-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=../../.env ./node_modules/tsx/dist/cli.mjs watch src/index.ts",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@agenttag/config": "workspace:*",
+    "@agenttag/db": "workspace:*",
+    "@agenttag/domain": "workspace:*",
+    "@agenttag/feishu": "workspace:*",
+    "@agenttag/memory": "workspace:*",
+    "@agenttag/runtime": "workspace:*",
+    "@anthropic-ai/sdk": "^0.65.0",
+    "bullmq": "^5.58.5",
+    "drizzle-orm": "^0.45.2",
+    "ioredis": "^5.8.0",
+    "ulid": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.20.5",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

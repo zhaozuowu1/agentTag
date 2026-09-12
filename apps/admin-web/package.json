@@ -1,0 +1,29 @@
+{
+  "name": "@agenttag/admin-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=../../.env ./node_modules/next/dist/bin/next dev -p 3001",
+    "build": "next build",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@agenttag/config": "workspace:*",
+    "@agenttag/db": "workspace:*",
+    "@agenttag/domain": "workspace:*",
+    "@agenttag/memory": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "next": "^15.5.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
