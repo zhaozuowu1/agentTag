@@ -1,4 +1,5 @@
 import type { AgentTurnResult, TranscriptEvent } from "@agenttag/domain";
+import { canStartSession } from "@agenttag/domain";
 import { progressCard } from "@agenttag/feishu";
 import { messagesFromTranscript, runAgentLoop, type LlmClient } from "@agenttag/runtime";
 import { FEISHU_MESSAGE_TOOL_DEFS, MEMORY_TOOL_DEFS } from "@agenttag/runtime";
@@ -38,6 +39,7 @@ export interface ProcessSessionDeps {
   searchMessages?: (input: unknown) => Promise<string>;
   extraTools?: Record<string, (input: unknown) => Promise<string>>;
   memoryBlock?: string;
+  getBudget(tenantKey: string): Promise<{ usedUsd: number; limitUsd: number | null }>;
 }
 
 function cardFrom(result: AgentTurnResult, title: string) {
@@ -69,11 +71,24 @@ export async function processSessionJob(
   };
 
   try {
-    await deps.patchCard(first.checklistMessageId, cardFrom(initial, "正在处理"));
     for (let round = 0; round < 8; round += 1) {
       const session = await deps.loadSession(job.sessionId);
       if (!session || !session.checklistMessageId) {
         return;
+      }
+      const budget = await deps.getBudget(session.tenantKey);
+      if (!canStartSession(budget.usedUsd, budget.limitUsd)) {
+        const exhausted: AgentTurnResult = {
+          checklist: [{ id: "history", label: "读取群历史", status: "blocked" }],
+          replyMarkdown: "本月额度已用完",
+          stop: true,
+        };
+        await deps.patchCard(session.checklistMessageId, cardFrom(exhausted, "本月额度已用完"));
+        await deps.markSession(session.id, "idle");
+        return;
+      }
+      if (round === 0) {
+        await deps.patchCard(session.checklistMessageId, cardFrom(initial, "正在处理"));
       }
       const usersBefore = userTurnCount(session.transcript);
       const userTurns = session.transcript.filter((event) => event.type === "user");

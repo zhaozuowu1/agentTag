@@ -43,6 +43,7 @@ describe("processSessionJob", () => {
         markSession: async () => {},
         appendEvents: async () => {},
         listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
       },
     );
     const last = patches.at(-1) as { body?: { elements?: Array<{ content?: string }> }; header?: { title?: { content?: string } } };
@@ -73,6 +74,7 @@ describe("processSessionJob", () => {
         },
         appendEvents: async () => {},
         listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
       },
     );
     expect(statuses).toContain("failed");
@@ -115,10 +117,44 @@ describe("processSessionJob", () => {
           db.transcript.push(...events);
         },
         listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
       },
     );
     expect(db.transcript.some((event) => event.type === "user" && event.text === "把结论改成表格")).toBe(true);
     expect(seen.length).toBeGreaterThanOrEqual(2);
     expect(seen[1]).toContain("把结论改成表格");
+  });
+
+  it("does not call the model when the tenant monthly budget is exhausted", async () => {
+    let called = 0;
+    const llm: LlmClient = {
+      async create() {
+        called += 1;
+        return {
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: "不该出现" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+    const patches: unknown[] = [];
+    await processSessionJob(
+      { sessionId: "sess_1" },
+      {
+        llm,
+        loadSession: async () => session(),
+        patchCard: async (_id, card) => {
+          patches.push(card);
+        },
+        recordUsage: async () => {},
+        recordAudit: async () => {},
+        markSession: async () => {},
+        appendEvents: async () => {},
+        listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 10, limitUsd: 10 }),
+      },
+    );
+    expect(called).toBe(0);
+    expect(JSON.stringify(patches)).toContain("本月额度已用完");
   });
 });

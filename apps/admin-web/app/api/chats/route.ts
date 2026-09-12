@@ -21,10 +21,18 @@ function requireAdmin(req: Request) {
   return authorizeAdmin(req.headers.get("authorization"), token);
 }
 
+function parseLimitUsd(raw: string | null | undefined): number | null {
+  if (raw == null || raw === "") {
+    return null;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 async function snapshot(database: ReturnType<typeof db>, tenantKey: string) {
   const chats = await database.select().from(authorizedChats).where(eq(authorizedChats.tenantKey, tenantKey));
   const tenantRows = await database.select().from(tenants).where(eq(tenants.tenantKey, tenantKey)).limit(1);
-  const limitUsd = Number(tenantRows[0]?.monthlyLimitUsd ?? 0);
+  const limitUsd = parseLimitUsd(tenantRows[0]?.monthlyLimitUsd);
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
@@ -91,12 +99,28 @@ export async function PATCH(req: Request) {
   if (!requireAdmin(req)) {
     return unauthorized();
   }
-  const body = (await req.json()) as { tenantKey?: string; chatId?: string; enabled?: boolean };
+  const body = (await req.json()) as {
+    tenantKey?: string;
+    chatId?: string;
+    enabled?: boolean;
+    monthlyLimitUsd?: number | null;
+  };
   const tenantKey = body.tenantKey ?? "default";
+  const database = db();
+  if ("monthlyLimitUsd" in body) {
+    await database.insert(tenants).values({ tenantKey }).onConflictDoNothing();
+    const limit = body.monthlyLimitUsd;
+    await database
+      .update(tenants)
+      .set({ monthlyLimitUsd: limit == null ? null : String(limit) })
+      .where(eq(tenants.tenantKey, tenantKey));
+    if (!body.chatId) {
+      return NextResponse.json(await snapshot(database, tenantKey));
+    }
+  }
   if (!body.chatId || typeof body.enabled !== "boolean") {
     return NextResponse.json({ error: "缺少 chatId 或 enabled" }, { status: 400 });
   }
-  const database = db();
   await database
     .update(authorizedChats)
     .set({ enabled: body.enabled })

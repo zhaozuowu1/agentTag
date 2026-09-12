@@ -11,9 +11,10 @@ describe("canStartSession", () => {
     expect(canStartSession(12, 10)).toBe(false);
   });
 
-  it("treats a non-positive limit as unlimited", () => {
-    expect(canStartSession(100, 0)).toBe(true);
-    expect(canStartSession(100, -1)).toBe(true);
+  it("treats a missing limit as unlimited and zero as blocked", () => {
+    expect(canStartSession(100, null)).toBe(true);
+    expect(canStartSession(0, 0)).toBe(false);
+    expect(canStartSession(100, 0)).toBe(false);
   });
 });
 

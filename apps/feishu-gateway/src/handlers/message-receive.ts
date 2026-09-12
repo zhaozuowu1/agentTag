@@ -49,7 +49,7 @@ export interface MessageReceiveDeps {
   appendUserMessage(sessionId: string, openId: string, text: string): Promise<void>;
   enqueue(job: { sessionId: string }): Promise<void>;
   newId: () => string;
-  getBudget(tenantKey: string): Promise<{ usedUsd: number; limitUsd: number }>;
+  getBudget(tenantKey: string): Promise<{ usedUsd: number; limitUsd: number | null }>;
 }
 
 export async function handleMessageReceive(
@@ -104,6 +104,16 @@ export async function handleMessageReceive(
   }
 
   if (decision.type === "steer") {
+    const budget = await deps.getBudget(event.tenantKey);
+    if (!canStartSession(budget.usedUsd, budget.limitUsd)) {
+      const card = progressCard({
+        title: "本月额度已用完",
+        statusText: "本月额度已用完",
+        checklist: [],
+      });
+      await deps.replyInThread(event.messageId, card);
+      return;
+    }
     await deps.appendUserMessage(decision.sessionId, decision.openId, decision.text);
     await deps.enqueue({ sessionId: decision.sessionId });
     return;

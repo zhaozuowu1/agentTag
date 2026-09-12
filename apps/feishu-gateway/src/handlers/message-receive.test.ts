@@ -58,7 +58,7 @@ function createDeps(overrides: Partial<MessageReceiveDeps> = {}) {
       enqueued.push(job);
     },
     newId: () => "sess_1",
-    getBudget: async () => ({ usedUsd: 0, limitUsd: 0 }),
+    getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
     ...overrides,
   };
   return deps;
@@ -136,6 +136,31 @@ describe("handleMessageReceive", () => {
       getBudget: async () => ({ usedUsd: 10, limitUsd: 10 }),
     });
     await handleMessageReceive({ ...event, eventId: "ev_budget" }, deps);
+    expect(deps.enqueued).toEqual([]);
+    const card = deps.replies[0]?.card as { header?: { title?: { content?: string } } };
+    expect(card.header?.title?.content).toBe("本月额度已用完");
+  });
+
+  it("rejects in-thread steer when the tenant monthly budget is exhausted", async () => {
+    const appended: string[] = [];
+    const deps = createDeps({
+      findSession: async () => ({ id: "sess_live", status: "idle" }),
+      appendUserMessage: async () => {
+        appended.push("steer");
+      },
+      getBudget: async () => ({ usedUsd: 10, limitUsd: 10 }),
+    });
+    await handleMessageReceive(
+      {
+        ...event,
+        eventId: "ev_steer_budget",
+        threadId: "omt_1",
+        mentionOpenIds: [],
+        text: "把结论改成表格",
+      },
+      deps,
+    );
+    expect(appended).toEqual([]);
     expect(deps.enqueued).toEqual([]);
     const card = deps.replies[0]?.card as { header?: { title?: { content?: string } } };
     expect(card.header?.title?.content).toBe("本月额度已用完");

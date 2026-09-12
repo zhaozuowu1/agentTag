@@ -1,11 +1,12 @@
 import { parseEnv } from "@agenttag/config";
-import { auditEvents, createDb, usageEvents, workingSessions } from "@agenttag/db";
+import { auditEvents, createDb, tenants, usageEvents, workingSessions } from "@agenttag/db";
+import { tokensToUsd } from "@agenttag/domain";
 import { createFeishuClient } from "@agenttag/feishu";
 import { createFeishuMessageTools, createMemoryTools, memoryPromptBlock, type LlmClient } from "@agenttag/runtime";
 import { createDbMemoryStore } from "@agenttag/memory";
 import Anthropic from "@anthropic-ai/sdk";
 import { Worker } from "bullmq";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gte, sql, sum } from "drizzle-orm";
 import Redis from "ioredis";
 import { ulid } from "ulid";
 import { processSessionJob, type WorkerSession } from "./process-session.ts";
@@ -132,6 +133,25 @@ export async function startWorker() {
           searchMessages: tools.feishu_search_messages,
           extraTools: memoryTools,
           memoryBlock: memoryPromptBlock(memories),
+          getBudget: async (tenantKey) => {
+            const tenantRows = await db.select().from(tenants).where(eq(tenants.tenantKey, tenantKey)).limit(1);
+            const raw = tenantRows[0]?.monthlyLimitUsd;
+            const parsed = raw == null || raw === "" ? null : Number(raw);
+            const monthStart = new Date();
+            monthStart.setUTCDate(1);
+            monthStart.setUTCHours(0, 0, 0, 0);
+            const usageRows = await db
+              .select({
+                input: sum(usageEvents.inputTokens),
+                output: sum(usageEvents.outputTokens),
+              })
+              .from(usageEvents)
+              .where(and(eq(usageEvents.tenantKey, tenantKey), gte(usageEvents.createdAt, monthStart)));
+            return {
+              usedUsd: tokensToUsd(Number(usageRows[0]?.input ?? 0), Number(usageRows[0]?.output ?? 0)),
+              limitUsd: parsed != null && Number.isFinite(parsed) ? parsed : null,
+            };
+          },
         },
       );
     },

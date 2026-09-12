@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 
 interface Snapshot {
   chats: Array<{ tenantKey: string; chatId: string; enabled: boolean; chatType: string }>;
-  usage: { usedUsd: number; limitUsd: number };
+  usage: { usedUsd: number; limitUsd: number | null };
   memories: Array<{ id: string; chatId: string | null; kind: string; text: string }>;
 }
 
@@ -12,6 +12,7 @@ export default function AdminPage() {
   const [token, setToken] = useState("");
   const [tenantKey, setTenantKey] = useState("default");
   const [chatId, setChatId] = useState("");
+  const [limitInput, setLimitInput] = useState("");
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +27,7 @@ export default function AdminPage() {
   async function load(next?: Snapshot) {
     if (next) {
       setData(next);
+      setLimitInput(next.usage.limitUsd == null ? "" : String(next.usage.limitUsd));
       setError(null);
       return;
     }
@@ -34,8 +36,27 @@ export default function AdminPage() {
       setError("无法加载，请检查 ADMIN_TOKEN。");
       return;
     }
-    setData((await res.json()) as Snapshot);
+    const snapshot = (await res.json()) as Snapshot;
+    setData(snapshot);
+    setLimitInput(snapshot.usage.limitUsd == null ? "" : String(snapshot.usage.limitUsd));
     setError(null);
+  }
+
+  async function saveLimit() {
+    const trimmed = limitInput.trim();
+    const monthlyLimitUsd = trimmed === "" ? null : Number(trimmed);
+    if (monthlyLimitUsd != null && !Number.isFinite(monthlyLimitUsd)) {
+      setError("月度上限必须是数字，留空表示未设。");
+      return;
+    }
+    const res = await fetch("/api/chats", {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({ tenantKey, monthlyLimitUsd }),
+    });
+    if (res.ok) {
+      await load((await res.json()) as Snapshot);
+    }
   }
 
   async function addChat() {
@@ -95,8 +116,20 @@ export default function AdminPage() {
             <h2>本月用量</h2>
             <p>
               已用 {data.usage.usedUsd.toFixed(4)} USD
-              {data.usage.limitUsd > 0 ? ` / 上限 ${data.usage.limitUsd} USD` : " / 未设上限"}
+              {data.usage.limitUsd == null ? " / 未设上限" : ` / 上限 ${data.usage.limitUsd} USD`}
             </p>
+            <label>
+              月度上限 USD（空=未设，0=禁止新会话）
+              <input
+                value={limitInput}
+                onChange={(event) => setLimitInput(event.target.value)}
+                inputMode="decimal"
+                placeholder="未设"
+              />
+            </label>
+            <button type="button" onClick={() => void saveLimit()}>
+              保存上限
+            </button>
           </section>
           <section>
             <h2>授权群</h2>

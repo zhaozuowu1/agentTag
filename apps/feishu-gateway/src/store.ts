@@ -102,7 +102,8 @@ export function createGatewayStore(db: Db) {
 
     async getBudget(tenantKey: string) {
       const tenantRows = await db.select().from(tenants).where(eq(tenants.tenantKey, tenantKey)).limit(1);
-      const limitUsd = Number(tenantRows[0]?.monthlyLimitUsd ?? 0);
+      const raw = tenantRows[0]?.monthlyLimitUsd;
+      const limitUsd = raw == null || raw === "" ? null : Number(raw);
       const monthStart = new Date();
       monthStart.setUTCDate(1);
       monthStart.setUTCHours(0, 0, 0, 0);
@@ -114,7 +115,7 @@ export function createGatewayStore(db: Db) {
         .from(usageEvents)
         .where(and(eq(usageEvents.tenantKey, tenantKey), gte(usageEvents.createdAt, monthStart)));
       const usedUsd = tokensToUsd(Number(usageRows[0]?.input ?? 0), Number(usageRows[0]?.output ?? 0));
-      return { usedUsd, limitUsd };
+      return { usedUsd, limitUsd: limitUsd != null && Number.isFinite(limitUsd) ? limitUsd : null };
     },
   };
 }
