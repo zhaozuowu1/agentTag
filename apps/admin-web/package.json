@@ -1,0 +1,21 @@
+{
+  "name": "@agenttag/admin-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'admin-web stub'",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@agenttag/config": "workspace:*",
+    "@agenttag/db": "workspace:*",
+    "@agenttag/domain": "workspace:*",
+    "@agenttag/memory": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@agenttag/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "migrate": "echo 'db migrate not implemented yet' && exit 1"
+  },
+  "dependencies": {
+    "@agenttag/domain": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

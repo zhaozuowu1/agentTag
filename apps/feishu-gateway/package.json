@@ -1,0 +1,22 @@
+{
+  "name": "@agenttag/feishu-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@agenttag/config": "workspace:*",
+    "@agenttag/db": "workspace:*",
+    "@agenttag/domain": "workspace:*",
+    "@agenttag/feishu": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.5",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
