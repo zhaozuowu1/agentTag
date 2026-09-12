@@ -113,8 +113,12 @@ describe("processSessionJob", () => {
         markSession: async (_id, status) => {
           db.status = status;
         },
-        appendEvents: async (_id, events) => {
-          db.transcript.push(...events);
+        appendEvents: async (_id, events, atIndex) => {
+          if (atIndex == null) {
+            db.transcript.push(...events);
+          } else {
+            db.transcript.splice(atIndex, 0, ...events);
+          }
         },
         listMessages: async () => "[]",
         getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
@@ -123,6 +127,8 @@ describe("processSessionJob", () => {
     expect(db.transcript.some((event) => event.type === "user" && event.text === "把结论改成表格")).toBe(true);
     expect(seen.length).toBeGreaterThanOrEqual(2);
     expect(seen[1]).toContain("把结论改成表格");
+    const roundTwo = JSON.parse(seen[1] ?? "[]") as Array<{ role: string }>;
+    expect(roundTwo.at(-1)?.role).toBe("user");
   });
 
   it("does not call the model when the tenant monthly budget is exhausted", async () => {

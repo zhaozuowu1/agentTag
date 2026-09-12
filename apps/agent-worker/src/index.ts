@@ -127,14 +127,31 @@ export async function startWorker() {
               })
               .where(eq(workingSessions.id, id));
           },
-          appendEvents: async (id, events) => {
-            await db
-              .update(workingSessions)
-              .set({
-                lastActivityAt: new Date(),
-                transcript: sql`coalesce(${workingSessions.transcript}, '[]'::jsonb) || ${JSON.stringify(events)}::jsonb`,
-              })
-              .where(eq(workingSessions.id, id));
+          appendEvents: async (id, events, atIndex) => {
+            if (atIndex == null) {
+              await db
+                .update(workingSessions)
+                .set({
+                  lastActivityAt: new Date(),
+                  transcript: sql`coalesce(${workingSessions.transcript}, '[]'::jsonb) || ${JSON.stringify(events)}::jsonb`,
+                })
+                .where(eq(workingSessions.id, id));
+              return;
+            }
+            for (const [offset, event] of events.entries()) {
+              const index = atIndex + offset;
+              const insert =
+                index <= 0
+                  ? sql`jsonb_insert(coalesce(${workingSessions.transcript}, '[]'::jsonb), '{0}', ${JSON.stringify(event)}::jsonb)`
+                  : sql`jsonb_insert(coalesce(${workingSessions.transcript}, '[]'::jsonb), ${`{${index - 1}}`}::text[], ${JSON.stringify(event)}::jsonb, true)`;
+              await db
+                .update(workingSessions)
+                .set({
+                  lastActivityAt: new Date(),
+                  transcript: insert,
+                })
+                .where(eq(workingSessions.id, id));
+            }
           },
           listMessages: tools.feishu_list_messages,
           searchMessages: tools.feishu_search_messages,

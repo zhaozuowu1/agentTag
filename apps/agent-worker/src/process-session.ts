@@ -34,7 +34,7 @@ export interface ProcessSessionDeps {
     success: boolean;
   }): Promise<void>;
   markSession(sessionId: string, status: "idle" | "failed"): Promise<void>;
-  appendEvents(sessionId: string, events: TranscriptEvent[]): Promise<void>;
+  appendEvents(sessionId: string, events: TranscriptEvent[], atIndex?: number): Promise<void>;
   listMessages: (input: unknown) => Promise<string>;
   searchMessages?: (input: unknown) => Promise<string>;
   extraTools?: Record<string, (input: unknown) => Promise<string>>;
@@ -90,6 +90,7 @@ export async function processSessionJob(
       if (round === 0) {
         await deps.patchCard(session.checklistMessageId, cardFrom(initial, "正在处理"));
       }
+      const originLength = session.transcript.length;
       const usersBefore = userTurnCount(session.transcript);
       const userTurns = session.transcript.filter((event) => event.type === "user");
       const lastUser = userTurns.at(-1);
@@ -126,9 +127,11 @@ export async function processSessionJob(
         },
       });
       await deps.patchCard(session.checklistMessageId, cardFrom(result, "处理完成"));
-      await deps.appendEvents(session.id, [
-        { type: "assistant", text: result.replyMarkdown, at: new Date().toISOString() },
-      ]);
+      await deps.appendEvents(
+        session.id,
+        [{ type: "assistant", text: result.replyMarkdown, at: new Date().toISOString() }],
+        originLength,
+      );
       const latest = await deps.loadSession(job.sessionId);
       if (latest && userTurnCount(latest.transcript) > usersBefore) {
         continue;
