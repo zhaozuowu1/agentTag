@@ -106,6 +106,7 @@ export async function startGateway() {
             await queue.add("session.run", job);
           },
           newId: () => ulid(),
+          getBudget: (tenantKey) => store.getBudget(tenantKey),
         });
       }
     },

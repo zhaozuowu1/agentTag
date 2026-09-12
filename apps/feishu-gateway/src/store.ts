@@ -1,5 +1,6 @@
-import { and, eq, inArray } from "drizzle-orm";
-import { authorizedChats, createDb, tenants, workingSessions } from "@agenttag/db";
+import { and, eq, gte, inArray, sum } from "drizzle-orm";
+import { authorizedChats, createDb, tenants, usageEvents, workingSessions } from "@agenttag/db";
+import { tokensToUsd } from "@agenttag/domain";
 
 type Db = ReturnType<typeof createDb>["db"];
 
@@ -105,6 +106,23 @@ export function createGatewayStore(db: Db) {
           ],
         })
         .where(eq(workingSessions.id, sessionId));
+    },
+
+    async getBudget(tenantKey: string) {
+      const tenantRows = await db.select().from(tenants).where(eq(tenants.tenantKey, tenantKey)).limit(1);
+      const limitUsd = Number(tenantRows[0]?.monthlyLimitUsd ?? 0);
+      const monthStart = new Date();
+      monthStart.setUTCDate(1);
+      monthStart.setUTCHours(0, 0, 0, 0);
+      const usageRows = await db
+        .select({
+          input: sum(usageEvents.inputTokens),
+          output: sum(usageEvents.outputTokens),
+        })
+        .from(usageEvents)
+        .where(and(eq(usageEvents.tenantKey, tenantKey), gte(usageEvents.createdAt, monthStart)));
+      const usedUsd = tokensToUsd(Number(usageRows[0]?.input ?? 0), Number(usageRows[0]?.output ?? 0));
+      return { usedUsd, limitUsd };
     },
   };
 }

@@ -1,3 +1,4 @@
+export { canStartSession, tokensToUsd } from "./budget.ts";
 export { botAddedText, shouldRunInChat } from "./authz.ts";
 export type { ChatType, RunDecision } from "./authz.ts";
 export { normalizeUserText, routeMessage } from "./routing.ts";

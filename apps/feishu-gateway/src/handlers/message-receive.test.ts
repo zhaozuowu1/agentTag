@@ -58,6 +58,7 @@ function createDeps(overrides: Partial<MessageReceiveDeps> = {}) {
       enqueued.push(job);
     },
     newId: () => "sess_1",
+    getBudget: async () => ({ usedUsd: 0, limitUsd: 0 }),
     ...overrides,
   };
   return deps;
@@ -128,6 +129,16 @@ describe("handleMessageReceive", () => {
     expect(archived).toEqual(["sess_old"]);
     expect(deps.enqueued).toEqual([{ sessionId: "sess_new" }]);
     expect(deps.replies).toHaveLength(1);
+  });
+
+  it("does not enqueue a new session when the tenant monthly budget is exhausted", async () => {
+    const deps = createDeps({
+      getBudget: async () => ({ usedUsd: 10, limitUsd: 10 }),
+    });
+    await handleMessageReceive({ ...event, eventId: "ev_budget" }, deps);
+    expect(deps.enqueued).toEqual([]);
+    const card = deps.replies[0]?.card as { header?: { title?: { content?: string } } };
+    expect(card.header?.title?.content).toBe("本月额度已用完");
   });
 });
 
