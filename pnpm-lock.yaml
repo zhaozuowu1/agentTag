@@ -212,7 +212,13 @@ importers:
       '@agenttag/domain':
         specifier: workspace:*
         version: link:../domain
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(postgres@3.4.9)
     devDependencies:
+      '@types/node':
+        specifier: ^22.15.30
+        version: 22.20.2
       typescript:
         specifier: ^5.8.3
         version: 5.9.3

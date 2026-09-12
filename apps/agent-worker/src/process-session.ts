@@ -1,6 +1,7 @@
 import type { AgentTurnResult, TranscriptEvent } from "@agenttag/domain";
 import { progressCard } from "@agenttag/feishu";
 import { messagesFromTranscript, runAgentLoop, type LlmClient } from "@agenttag/runtime";
+import { FEISHU_MESSAGE_TOOL_DEFS, MEMORY_TOOL_DEFS } from "@agenttag/runtime";
 
 export interface WorkerSession {
   id: string;
@@ -34,6 +35,8 @@ export interface ProcessSessionDeps {
   markSession(sessionId: string, status: "idle" | "failed", transcript?: TranscriptEvent[]): Promise<void>;
   listMessages: (input: unknown) => Promise<string>;
   searchMessages?: (input: unknown) => Promise<string>;
+  extraTools?: Record<string, (input: unknown) => Promise<string>>;
+  memoryBlock?: string;
 }
 
 function cardFrom(result: AgentTurnResult, title: string) {
@@ -74,12 +77,14 @@ export async function processSessionJob(
       llm: deps.llm,
       model: "claude-sonnet-4-6",
       system:
-        "你是飞书群里的队友 Claude。用中文回答。先用工具了解本群现场，再给出简洁结论。只把稳定约定写入记忆工具（若可用），不要把流水账当记忆。",
+        `你是飞书群里的队友 Claude。用中文回答。先用工具了解本群现场，再给出简洁结论。只把稳定约定写入记忆工具（若可用），不要把流水账当记忆。\n${deps.memoryBlock ?? "本群尚无已保存记忆。"}`,
       messages,
       tools: {
         feishu_list_messages: deps.listMessages,
         feishu_search_messages: deps.searchMessages ?? deps.listMessages,
+        ...deps.extraTools,
       },
+      toolDefs: [...FEISHU_MESSAGE_TOOL_DEFS, ...MEMORY_TOOL_DEFS],
       initial,
       onTurn: async (turn) => {
         await deps.patchCard(session.checklistMessageId!, cardFrom(turn, turn.stop ? "处理完成" : "正在处理"));

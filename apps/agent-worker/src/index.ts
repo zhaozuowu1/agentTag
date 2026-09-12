@@ -1,7 +1,8 @@
 import { parseEnv } from "@agenttag/config";
 import { auditEvents, createDb, usageEvents, workingSessions } from "@agenttag/db";
 import { createFeishuClient } from "@agenttag/feishu";
-import { createFeishuMessageTools, type LlmClient } from "@agenttag/runtime";
+import { createFeishuMessageTools, createMemoryTools, memoryPromptBlock, type LlmClient } from "@agenttag/runtime";
+import { createDbMemoryStore } from "@agenttag/memory";
 import Anthropic from "@anthropic-ai/sdk";
 import { Worker } from "bullmq";
 import { eq } from "drizzle-orm";
@@ -68,6 +69,16 @@ export async function startWorker() {
         return;
       }
       const tools = createFeishuMessageTools(feishu, { chatId: row.chatId, threadId: row.threadId });
+      const memoryStore = createDbMemoryStore(db);
+      const chat = await feishu.getChat(row.chatId).catch(() => ({ chatType: "private" as const, external: false, name: "" }));
+      const memories = await memoryStore.list({ tenantKey: row.tenantKey, chatId: row.chatId });
+      const memoryTools = createMemoryTools(memoryStore, {
+        tenantKey: row.tenantKey,
+        chatId: row.chatId,
+        openId: row.startedByOpenId,
+        chatType: chat.chatType,
+        sessionId: row.id,
+      });
       await processSessionJob(
         { sessionId },
         {
@@ -108,6 +119,8 @@ export async function startWorker() {
           },
           listMessages: tools.feishu_list_messages,
           searchMessages: tools.feishu_search_messages,
+          extraTools: memoryTools,
+          memoryBlock: memoryPromptBlock(memories),
         },
       );
     },

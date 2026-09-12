@@ -1,3 +1,5 @@
+export { allowMemoryWrite } from "./memory-policy.ts";
+export type { MemoryKind, MemoryScope } from "./memory-policy.ts";
 export { canStartSession, tokensToUsd } from "./budget.ts";
 export { botAddedText, shouldRunInChat } from "./authz.ts";
 export type { ChatType, RunDecision } from "./authz.ts";
