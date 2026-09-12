@@ -1,6 +1,9 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
+import { loadRepoRootEnv } from "./load-root-env.ts";
+
+loadRepoRootEnv();
 
 const url = process.env.DATABASE_URL;
 if (!url) {
