@@ -17,4 +17,6 @@ pnpm test
 pnpm dev
 ```
 
+管理台默认端口 3001：`pnpm --filter @agenttag/admin-web dev`，用 `ADMIN_TOKEN` Bearer 登录。网关默认 3000：`pnpm --filter @agenttag/feishu-gateway dev`。
+
 国内网络请同时配置 `ANTHROPIC_BASE_URL` 与 npm registry。
