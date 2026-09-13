@@ -1,5 +1,6 @@
 import type { AgentTurnResult, TranscriptEvent } from "@agenttag/domain";
 import { canStartSession } from "@agenttag/domain";
+import { DEFAULT_DASHSCOPE_MODEL } from "@agenttag/config";
 import { progressCard } from "@agenttag/feishu";
 import { messagesFromTranscript, runAgentLoop, type LlmClient } from "@agenttag/runtime";
 import { FEISHU_MESSAGE_TOOL_DEFS, MEMORY_TOOL_DEFS } from "@agenttag/runtime";
@@ -17,6 +18,7 @@ export interface WorkerSession {
 
 export interface ProcessSessionDeps {
   llm: LlmClient;
+  model?: string;
   loadSession(sessionId: string): Promise<WorkerSession | null>;
   patchCard(messageId: string, card: unknown): Promise<void>;
   recordUsage(row: {
@@ -102,7 +104,7 @@ export async function processSessionJob(
 
       const result = await runAgentLoop({
         llm: deps.llm,
-        model: "claude-sonnet-4-6",
+        model: deps.model ?? DEFAULT_DASHSCOPE_MODEL,
         system:
           `你是飞书群里的队友 Claude。用中文回答。先用工具了解本群现场，再给出简洁结论。只把稳定约定写入记忆工具（若可用），不要把流水账当记忆。\n${deps.memoryBlock ?? "本群尚无已保存记忆。"}`,
         messages,

@@ -201,4 +201,63 @@ describe("processSessionJob", () => {
     expect(called).toBe(0);
     expect(JSON.stringify(patches)).toContain("本月额度已用完");
   });
+
+  it("sends the configured DashScope model instead of a hardcoded Anthropic id", async () => {
+    let model = "";
+    const llm: LlmClient = {
+      async create(params) {
+        model = params.model;
+        return {
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: "结论" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+    await processSessionJob(
+      { sessionId: "sess_1" },
+      {
+        llm,
+        model: "qwen-max",
+        loadSession: async () => session(),
+        patchCard: async () => {},
+        recordUsage: async () => {},
+        recordAudit: async () => {},
+        markSession: async () => {},
+        appendEvents: async () => {},
+        listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+      },
+    );
+    expect(model).toBe("qwen-max");
+  });
+
+  it("defaults the model id to qwen-plus", async () => {
+    let model = "";
+    const llm: LlmClient = {
+      async create(params) {
+        model = params.model;
+        return {
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: "结论" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+    await processSessionJob(
+      { sessionId: "sess_1" },
+      {
+        llm,
+        loadSession: async () => session(),
+        patchCard: async () => {},
+        recordUsage: async () => {},
+        recordAudit: async () => {},
+        markSession: async () => {},
+        appendEvents: async () => {},
+        listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+      },
+    );
+    expect(model).toBe("qwen-plus");
+  });
 });

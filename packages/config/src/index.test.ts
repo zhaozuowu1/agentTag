@@ -6,7 +6,7 @@ const required = {
   FEISHU_APP_SECRET: "secret",
   FEISHU_ENCRYPT_KEY: "encrypt",
   FEISHU_VERIFICATION_TOKEN: "verify",
-  ANTHROPIC_API_KEY: "sk-ant",
+  DASHSCOPE_API_KEY: "sk-dashscope-test",
   DATABASE_URL: "postgres://agenttag:agenttag@localhost:5432/agenttag",
   REDIS_URL: "redis://localhost:6379",
   ADMIN_TOKEN: "admin-token",
@@ -14,20 +14,59 @@ const required = {
 };
 
 describe("parseEnv", () => {
-  it("parses required Feishu, Anthropic, and runtime secrets", () => {
+  it("requires DashScope and starts without an Anthropic key", () => {
     const env = parseEnv(required);
     expect(env.FEISHU_APP_ID).toBe("cli_app");
     expect(env.FEISHU_ENCRYPT_KEY).toBe("encrypt");
-    expect(env.ANTHROPIC_API_KEY).toBe("sk-ant");
+    expect(env.DASHSCOPE_API_KEY).toBe("sk-dashscope-test");
+    expect(env.DASHSCOPE_BASE_URL).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
+    expect(env.DASHSCOPE_MODEL).toBe("qwen-plus");
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(env.ADMIN_TOKEN).toBe("admin-token");
   });
 
-  it("accepts ANTHROPIC_BASE_URL for domestic gateways", () => {
+  it("lets DASHSCOPE_MODEL and DASHSCOPE_BASE_URL be overridden", () => {
     const env = parseEnv({
       ...required,
+      DASHSCOPE_MODEL: "qwen-max",
+      DASHSCOPE_BASE_URL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    });
+    expect(env.DASHSCOPE_MODEL).toBe("qwen-max");
+    expect(env.DASHSCOPE_BASE_URL).toBe("https://dashscope-intl.aliyuncs.com/compatible-mode/v1");
+  });
+
+  it("treats empty DashScope model and base URL as the documented defaults", () => {
+    const env = parseEnv({
+      ...required,
+      DASHSCOPE_MODEL: "",
+      DASHSCOPE_BASE_URL: "",
+    });
+    expect(env.DASHSCOPE_MODEL).toBe("qwen-plus");
+    expect(env.DASHSCOPE_BASE_URL).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
+  });
+
+  it("rejects a missing DASHSCOPE_API_KEY even when Anthropic is set", () => {
+    const { DASHSCOPE_API_KEY: _, ...rest } = required;
+    expect(() =>
+      parseEnv({
+        ...rest,
+        ANTHROPIC_API_KEY: "sk-ant",
+      }),
+    ).toThrow(/DASHSCOPE_API_KEY/);
+  });
+
+  it("treats empty DASHSCOPE_API_KEY as missing", () => {
+    expect(() => parseEnv({ ...required, DASHSCOPE_API_KEY: "" })).toThrow(/DASHSCOPE_API_KEY/);
+  });
+
+  it("accepts optional Anthropic fields without making them a startup dependency", () => {
+    const env = parseEnv({
+      ...required,
+      ANTHROPIC_API_KEY: "sk-ant",
       ANTHROPIC_BASE_URL: "https://api.example.com",
     });
+    expect(env.ANTHROPIC_API_KEY).toBe("sk-ant");
     expect(env.ANTHROPIC_BASE_URL).toBe("https://api.example.com");
   });
 
@@ -58,6 +97,15 @@ describe("resolveFeishuEventMode", () => {
     expect(resolveFeishuEventMode({ nodeEnv: "production", eventMode: "websocket" })).toBe("websocket");
     expect(resolveFeishuEventMode({ nodeEnv: "development", eventMode: "http" })).toBe("http");
     expect(resolveFeishuEventMode({ nodeEnv: "development", eventMode: "webhook" })).toBe("http");
+  });
+
+  it("rejects an unknown FEISHU_EVENT_MODE instead of falling back", () => {
+    expect(() => resolveFeishuEventMode({ nodeEnv: "production", eventMode: "websokcet" })).toThrow(
+      /FEISHU_EVENT_MODE/,
+    );
+    expect(() => resolveFeishuEventMode({ nodeEnv: "development", eventMode: "httpp" })).toThrow(
+      /FEISHU_EVENT_MODE/,
+    );
   });
 });
 

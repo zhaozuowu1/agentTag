@@ -2,9 +2,8 @@ import { parseEnv } from "@agenttag/config";
 import { auditEvents, createDb, tenants, usageEvents, workingSessions } from "@agenttag/db";
 import { tokensToUsd } from "@agenttag/domain";
 import { createFeishuClient } from "@agenttag/feishu";
-import { createFeishuMessageTools, createMemoryTools, memoryPromptBlock, type LlmClient } from "@agenttag/runtime";
+import { createFeishuMessageTools, createMemoryTools, createOpenAiCompatLlm, memoryPromptBlock } from "@agenttag/runtime";
 import { createDbMemoryStore } from "@agenttag/memory";
-import Anthropic from "@anthropic-ai/sdk";
 import { Worker } from "bullmq";
 import { and, eq, gte, sql, sum } from "drizzle-orm";
 import { Redis } from "ioredis";
@@ -12,47 +11,6 @@ import { ulid } from "ulid";
 import { processSessionJob, type WorkerSession } from "./process-session.ts";
 
 const SESSION_QUEUE = "agenttag";
-
-function createAnthropicLlm(env: { ANTHROPIC_API_KEY: string; ANTHROPIC_BASE_URL?: string }): LlmClient {
-  const client = new Anthropic({
-    apiKey: env.ANTHROPIC_API_KEY,
-    baseURL: env.ANTHROPIC_BASE_URL,
-  });
-  return {
-    async create(params) {
-      const response = await client.messages.create({
-        model: params.model,
-        max_tokens: 4096,
-        system: params.system,
-        messages: params.messages as Anthropic.MessageParam[],
-        tools: params.tools as Anthropic.Tool[],
-      });
-      return {
-        stop_reason: response.stop_reason ?? "end_turn",
-        content: response.content.flatMap(
-          (
-            part,
-          ): Array<
-            | { type: "text"; text: string }
-            | { type: "tool_use"; id: string; name: string; input: unknown }
-          > => {
-            if (part.type === "text") {
-              return [{ type: "text", text: part.text }];
-            }
-            if (part.type === "tool_use") {
-              return [{ type: "tool_use", id: part.id, name: part.name, input: part.input }];
-            }
-            return [];
-          },
-        ),
-        usage: {
-          input_tokens: response.usage.input_tokens,
-          output_tokens: response.usage.output_tokens,
-        },
-      };
-    },
-  };
-}
 
 export async function startWorker() {
   const env = parseEnv();
@@ -62,7 +20,10 @@ export async function startWorker() {
     appId: env.FEISHU_APP_ID,
     appSecret: env.FEISHU_APP_SECRET,
   });
-  const llm = createAnthropicLlm(env);
+  const llm = createOpenAiCompatLlm({
+    apiKey: env.DASHSCOPE_API_KEY,
+    baseURL: env.DASHSCOPE_BASE_URL,
+  });
 
   const worker = new Worker(
     SESSION_QUEUE,
@@ -91,6 +52,7 @@ export async function startWorker() {
         { sessionId },
         {
           llm,
+          model: env.DASHSCOPE_MODEL,
           loadSession: async (id) => {
             const latest = await db.select().from(workingSessions).where(eq(workingSessions.id, id)).limit(1);
             return (latest[0] as unknown as WorkerSession | undefined) ?? null;
