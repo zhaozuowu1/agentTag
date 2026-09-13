@@ -45,10 +45,10 @@ export function resolveFeishuEventMode(
   if (explicit === "http" || explicit === "webhook") {
     return "http";
   }
-  if (input.nodeEnv === "production") {
-    return "http";
+  if (input.nodeEnv === "development" || input.nodeEnv === "test") {
+    return "websocket";
   }
-  return "websocket";
+  return "http";
 }
 
 export function requireEncryptKeyIfHttp(mode: FeishuEventMode, encryptKey: string | undefined): void {

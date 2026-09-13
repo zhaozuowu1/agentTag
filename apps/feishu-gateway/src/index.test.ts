@@ -40,9 +40,10 @@ function signedEncryptRequest(payload: Record<string, unknown>, nonce: string) {
 }
 
 describe("createGatewayApp webhook auth", () => {
-  it("accepts plaintext events when Encrypt Key is not configured", async () => {
+  it("rejects HTTP events when Encrypt Key is not configured", async () => {
     const seen: unknown[] = [];
     const app = createGatewayApp({
+      eventMode: "websocket",
       onEvent: async (payload) => {
         seen.push(payload);
       },
@@ -53,10 +54,11 @@ describe("createGatewayApp webhook auth", () => {
       headers: { "Content-Type": "application/json" },
       body,
     });
-    expect(res.status).toBe(200);
-    await vi.waitFor(() => {
-      expect(seen).toHaveLength(1);
-    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(seen).toHaveLength(0);
+    const health = await app.request("/health");
+    expect(health.status).toBe(200);
+    expect(await health.json()).toMatchObject({ ok: true, events: "websocket" });
   });
 
   it("rejects plaintext events when an encrypt key is configured", async () => {

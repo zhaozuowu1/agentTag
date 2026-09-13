@@ -6,6 +6,7 @@ import {
   larkDispatcherDataToPayload,
   larkWsClientConfig,
   startFeishuLongConnection,
+  assertFeishuWsAppId,
 } from "./lark-ws.ts";
 
 const mentionEnvelope = {
@@ -146,5 +147,10 @@ describe("startFeishuLongConnection", () => {
   it("targets the China Feishu open platform, not Lark international", () => {
     const config = larkWsClientConfig({ appId: "cli_app", appSecret: "secret" });
     expect(config.domain).toBe(Domain.Feishu);
+  });
+
+  it("rejects an App ID that cannot open a Feishu long connection", () => {
+    expect(() => assertFeishuWsAppId("cli_app")).toThrow(/FEISHU_APP_ID/);
+    expect(() => assertFeishuWsAppId("cli_a1b2c3d4e5f67890")).not.toThrow();
   });
 });

@@ -44,14 +44,14 @@ describe("parseEnv", () => {
 });
 
 describe("resolveFeishuEventMode", () => {
-  it("uses SDK long connection outside production", () => {
+  it("uses SDK long connection in development and test", () => {
     expect(resolveFeishuEventMode({ nodeEnv: "development" })).toBe("websocket");
     expect(resolveFeishuEventMode({ nodeEnv: "test" })).toBe("websocket");
-    expect(resolveFeishuEventMode({})).toBe("websocket");
   });
 
-  it("uses HTTP webhook in production", () => {
+  it("uses HTTP webhook in production and when NODE_ENV is unset", () => {
     expect(resolveFeishuEventMode({ nodeEnv: "production" })).toBe("http");
+    expect(resolveFeishuEventMode({})).toBe("http");
   });
 
   it("lets FEISHU_EVENT_MODE override the default", () => {

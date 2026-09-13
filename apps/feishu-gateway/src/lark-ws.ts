@@ -39,13 +39,26 @@ export function larkDispatcherDataToPayload(data: Record<string, unknown>): Reco
   return { schema, header, event };
 }
 
-export function larkWsClientConfig(input: { appId: string; appSecret: string }) {
+export function larkWsClientConfig(input: {
+  appId: string;
+  appSecret: string;
+  onReady?: () => void;
+  onError?: (err: Error) => void;
+}) {
   return {
     appId: input.appId,
     appSecret: input.appSecret,
     domain: Domain.Feishu,
     loggerLevel: LoggerLevel.warn,
+    onReady: input.onReady,
+    onError: input.onError,
   };
+}
+
+export function assertFeishuWsAppId(appId: string): void {
+  if (!/^cli_[0-9a-fA-F]{16}$/.test(appId)) {
+    throw new Error("FEISHU_APP_ID 格式无效，无法建立飞书长连接");
+  }
 }
 
 export function createFeishuEventDispatcher(options: {
@@ -72,6 +85,8 @@ export async function startFeishuLongConnection(options: {
   appId: string;
   appSecret: string;
   eventDispatcher: EventDispatcher;
+  onReady?: () => void;
+  onError?: (err: Error) => void;
   startWsClient?: (opts: {
     appId: string;
     appSecret: string;
@@ -81,19 +96,22 @@ export async function startFeishuLongConnection(options: {
   if (options.mode !== "websocket") {
     return;
   }
-  const start = options.startWsClient ?? defaultStartWsClient;
-  await start({
-    appId: options.appId,
-    appSecret: options.appSecret,
-    eventDispatcher: options.eventDispatcher,
-  });
-}
-
-async function defaultStartWsClient(opts: {
-  appId: string;
-  appSecret: string;
-  eventDispatcher: EventDispatcher;
-}): Promise<void> {
-  const client = new WSClient(larkWsClientConfig(opts));
-  await client.start({ eventDispatcher: opts.eventDispatcher });
+  if (options.startWsClient) {
+    await options.startWsClient({
+      appId: options.appId,
+      appSecret: options.appSecret,
+      eventDispatcher: options.eventDispatcher,
+    });
+    return;
+  }
+  assertFeishuWsAppId(options.appId);
+  const client = new WSClient(
+    larkWsClientConfig({
+      appId: options.appId,
+      appSecret: options.appSecret,
+      onReady: options.onReady,
+      onError: options.onError,
+    }),
+  );
+  await client.start({ eventDispatcher: options.eventDispatcher });
 }

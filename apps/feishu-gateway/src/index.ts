@@ -26,10 +26,18 @@ const SESSION_QUEUE = "agenttag";
 export function createGatewayApp(options: {
   encryptKey?: string;
   verificationToken?: string;
+  eventMode?: "http" | "websocket";
+  wsReady?: () => boolean;
   onEvent: (payload: Record<string, unknown>) => Promise<void>;
 }) {
   const app = new Hono();
-  app.get("/health", (c) => c.json({ ok: true }));
+  app.get("/health", (c) =>
+    c.json({
+      ok: true,
+      events: options.eventMode ?? "http",
+      ...(options.eventMode === "websocket" ? { wsReady: options.wsReady?.() ?? false } : {}),
+    }),
+  );
   app.post("/feishu/events", async (c) => {
     const rawText = await c.req.text();
     let raw: Record<string, unknown>;
@@ -38,12 +46,15 @@ export function createGatewayApp(options: {
     } catch {
       return c.json({ error: "invalid json" }, 400);
     }
-    if (options.encryptKey && typeof raw.encrypt !== "string") {
+    if (!options.encryptKey) {
+      return c.json({ error: "http events require FEISHU_ENCRYPT_KEY" }, 400);
+    }
+    if (typeof raw.encrypt !== "string") {
       return c.json({ error: "encrypted payload required" }, 400);
     }
     let payload: Record<string, unknown>;
     try {
-      payload = unwrapFeishuBody(raw, options.encryptKey ?? "");
+      payload = unwrapFeishuBody(raw, options.encryptKey);
     } catch {
       return c.json({ error: "invalid encrypt" }, 400);
     }
@@ -189,9 +200,12 @@ export async function startGateway() {
     }
   };
 
+  let wsReady = false;
   const app = createGatewayApp({
     encryptKey: env.FEISHU_ENCRYPT_KEY,
     verificationToken: env.FEISHU_VERIFICATION_TOKEN,
+    eventMode: mode,
+    wsReady: () => wsReady,
     onEvent,
   });
 
@@ -209,6 +223,13 @@ export async function startGateway() {
         encryptKey: env.FEISHU_ENCRYPT_KEY,
         verificationToken: env.FEISHU_VERIFICATION_TOKEN,
       }),
+      onReady: () => {
+        wsReady = true;
+        console.log("feishu-gateway long connection ready");
+      },
+      onError: (error) => {
+        console.error("feishu-gateway long connection error", error.message);
+      },
     });
   }
 }
