@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --env-file=../../.env ./node_modules/tsx/dist/cli.mjs watch src/index.ts",
+    "dev": "NODE_ENV=development node --env-file=../../.env ./node_modules/tsx/dist/cli.mjs watch src/index.ts",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
   },
@@ -14,6 +14,7 @@
     "@agenttag/domain": "workspace:*",
     "@agenttag/feishu": "workspace:*",
     "@hono/node-server": "^1.19.0",
+    "@larksuiteoapi/node-sdk": "^1.73.3",
     "bullmq": "^5.58.5",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.9.8",

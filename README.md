@@ -21,4 +21,6 @@ pnpm dev
 
 管理台默认端口 3001：`pnpm --filter @agenttag/admin-web dev`，用 `ADMIN_TOKEN` Bearer 登录。网关默认 3000：`pnpm --filter @agenttag/feishu-gateway dev`。
 
+开发环境（`pnpm --filter @agenttag/feishu-gateway dev` 会设 `NODE_ENV=development`）默认用飞书 Node SDK **长连接**收事件（`im.message.receive_v1`、进群/出群），与开放平台「使用长连接接收事件」对齐，可不配 `FEISHU_ENCRYPT_KEY`。此时 HTTP `POST /feishu/events` 不再收明文事件。生产请设 `NODE_ENV=production`，仍走加密 webhook，并配置 Encrypt Key。可用 `FEISHU_EVENT_MODE=websocket|http` 覆盖默认。
+
 国内网络请同时配置 `ANTHROPIC_BASE_URL` 与 npm registry。

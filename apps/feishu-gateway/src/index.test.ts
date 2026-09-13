@@ -40,6 +40,27 @@ function signedEncryptRequest(payload: Record<string, unknown>, nonce: string) {
 }
 
 describe("createGatewayApp webhook auth", () => {
+  it("rejects HTTP events when Encrypt Key is not configured", async () => {
+    const seen: unknown[] = [];
+    const app = createGatewayApp({
+      eventMode: "websocket",
+      onEvent: async (payload) => {
+        seen.push(payload);
+      },
+    });
+    const body = JSON.stringify(eventPayload());
+    const res = await app.request("/feishu/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(seen).toHaveLength(0);
+    const health = await app.request("/health");
+    expect(health.status).toBe(200);
+    expect(await health.json()).toMatchObject({ ok: true, events: "websocket" });
+  });
+
   it("rejects plaintext events when an encrypt key is configured", async () => {
     const seen: unknown[] = [];
     const app = createGatewayApp({
