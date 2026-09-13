@@ -7,10 +7,17 @@ const optionalUrl = z.preprocess((value) => {
   return value;
 }, z.string().url().optional());
 
+const optionalSecret = z.preprocess((value) => {
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+  return value;
+}, z.string().min(1).optional());
+
 export const envSchema = z.object({
   FEISHU_APP_ID: z.string().min(1),
   FEISHU_APP_SECRET: z.string().min(1),
-  FEISHU_ENCRYPT_KEY: z.string().min(1),
+  FEISHU_ENCRYPT_KEY: optionalSecret,
   FEISHU_VERIFICATION_TOKEN: z.string().min(1),
   ANTHROPIC_API_KEY: z.string().min(1),
   ANTHROPIC_BASE_URL: optionalUrl,
@@ -22,6 +29,30 @@ export const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
+export type FeishuEventMode = "http" | "websocket";
+
 export function parseEnv(env: Record<string, string | undefined> = process.env): Env {
   return envSchema.parse(env);
+}
+
+export function resolveFeishuEventMode(
+  input: { nodeEnv?: string; eventMode?: string } = {},
+): FeishuEventMode {
+  const explicit = input.eventMode?.trim().toLowerCase();
+  if (explicit === "websocket" || explicit === "ws") {
+    return "websocket";
+  }
+  if (explicit === "http" || explicit === "webhook") {
+    return "http";
+  }
+  if (input.nodeEnv === "production") {
+    return "http";
+  }
+  return "websocket";
+}
+
+export function requireEncryptKeyIfHttp(mode: FeishuEventMode, encryptKey: string | undefined): void {
+  if (mode === "http" && !encryptKey) {
+    throw new Error("HTTP 事件订阅需要配置 FEISHU_ENCRYPT_KEY");
+  }
 }

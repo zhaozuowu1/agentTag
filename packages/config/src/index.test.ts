@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseEnv } from "./index.ts";
+import { parseEnv, requireEncryptKeyIfHttp, resolveFeishuEventMode } from "./index.ts";
 
 const required = {
   FEISHU_APP_ID: "cli_app",
@@ -31,8 +31,47 @@ describe("parseEnv", () => {
     expect(env.ANTHROPIC_BASE_URL).toBe("https://api.example.com");
   });
 
-  it("rejects missing FEISHU_ENCRYPT_KEY", () => {
+  it("allows missing FEISHU_ENCRYPT_KEY so development can use long connection", () => {
     const { FEISHU_ENCRYPT_KEY: _, ...rest } = required;
-    expect(() => parseEnv(rest)).toThrow();
+    const env = parseEnv(rest);
+    expect(env.FEISHU_ENCRYPT_KEY).toBeUndefined();
+  });
+
+  it("treats empty FEISHU_ENCRYPT_KEY as unset", () => {
+    const env = parseEnv({ ...required, FEISHU_ENCRYPT_KEY: "" });
+    expect(env.FEISHU_ENCRYPT_KEY).toBeUndefined();
+  });
+});
+
+describe("resolveFeishuEventMode", () => {
+  it("uses SDK long connection outside production", () => {
+    expect(resolveFeishuEventMode({ nodeEnv: "development" })).toBe("websocket");
+    expect(resolveFeishuEventMode({ nodeEnv: "test" })).toBe("websocket");
+    expect(resolveFeishuEventMode({})).toBe("websocket");
+  });
+
+  it("uses HTTP webhook in production", () => {
+    expect(resolveFeishuEventMode({ nodeEnv: "production" })).toBe("http");
+  });
+
+  it("lets FEISHU_EVENT_MODE override the default", () => {
+    expect(resolveFeishuEventMode({ nodeEnv: "production", eventMode: "websocket" })).toBe("websocket");
+    expect(resolveFeishuEventMode({ nodeEnv: "development", eventMode: "http" })).toBe("http");
+    expect(resolveFeishuEventMode({ nodeEnv: "development", eventMode: "webhook" })).toBe("http");
+  });
+});
+
+describe("requireEncryptKeyIfHttp", () => {
+  it("does not require Encrypt Key for long connection", () => {
+    expect(() => requireEncryptKeyIfHttp("websocket", undefined)).not.toThrow();
+  });
+
+  it("requires Encrypt Key for production HTTP webhook", () => {
+    expect(() => requireEncryptKeyIfHttp("http", undefined)).toThrow(/FEISHU_ENCRYPT_KEY/);
+    expect(() => requireEncryptKeyIfHttp("http", "")).toThrow(/FEISHU_ENCRYPT_KEY/);
+  });
+
+  it("allows HTTP webhook when Encrypt Key is present", () => {
+    expect(() => requireEncryptKeyIfHttp("http", "encrypt")).not.toThrow();
   });
 });
