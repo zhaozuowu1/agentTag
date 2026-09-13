@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { parseEnv } from "@agenttag/config";
+import { parseEnv, requireEncryptKeyIfHttp, resolveFeishuEventMode } from "@agenttag/config";
 import { createDb } from "@agenttag/db";
 import { createFeishuClient } from "@agenttag/feishu";
 import { serve } from "@hono/node-server";
@@ -8,6 +8,7 @@ import { Queue } from "bullmq";
 import { Hono } from "hono";
 import { Redis } from "ioredis";
 import { ulid } from "ulid";
+import { createFeishuEventDispatcher, startFeishuLongConnection } from "./lark-ws.ts";
 import {
   eventVerificationToken,
   feishuRequestSignature,
@@ -23,7 +24,7 @@ import { createGatewayStore } from "./store.ts";
 const SESSION_QUEUE = "agenttag";
 
 export function createGatewayApp(options: {
-  encryptKey: string;
+  encryptKey?: string;
   verificationToken?: string;
   onEvent: (payload: Record<string, unknown>) => Promise<void>;
 }) {
@@ -42,7 +43,7 @@ export function createGatewayApp(options: {
     }
     let payload: Record<string, unknown>;
     try {
-      payload = unwrapFeishuBody(raw, options.encryptKey);
+      payload = unwrapFeishuBody(raw, options.encryptKey ?? "");
     } catch {
       return c.json({ error: "invalid encrypt" }, 400);
     }
@@ -101,6 +102,11 @@ export async function loadEventProgress(redis: Redis, eventId: string): Promise<
 
 export async function startGateway() {
   const env = parseEnv();
+  const mode = resolveFeishuEventMode({
+    nodeEnv: process.env.NODE_ENV,
+    eventMode: process.env.FEISHU_EVENT_MODE,
+  });
+  requireEncryptKeyIfHttp(mode, env.FEISHU_ENCRYPT_KEY);
   const redis = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
   const queue = new Queue(SESSION_QUEUE, { connection: redis });
   const { db } = createDb(env.DATABASE_URL);
@@ -110,86 +116,101 @@ export async function startGateway() {
     appSecret: env.FEISHU_APP_SECRET,
   });
 
-  const app = createGatewayApp({
-    encryptKey: env.FEISHU_ENCRYPT_KEY,
-    verificationToken: env.FEISHU_VERIFICATION_TOKEN,
-    onEvent: async (payload) => {
-      const header = payload.header as { event_type?: string } | undefined;
-      const eventType = header?.event_type;
-      if (eventType === "im.chat.member.bot.added_v1") {
-        const parsed = parseBotAdded(payload);
-        if (!parsed) {
-          return;
-        }
-        const claimed = await claimEvent(redis, parsed.eventId);
-        if (!claimed) {
-          return;
-        }
-        try {
-          await store.ensureTenant(parsed.tenantKey);
-          await handleBotAdded(parsed, {
-            getChat: (chatId) => feishu.getChat(chatId),
-            lookupGrant: (tenantKey, chatId) => store.lookupGrant(tenantKey, chatId),
-            sendText: async (chatId, text) => {
-              await feishu.sendText(chatId, text);
-            },
-            loadProgress: (eventId) => loadEventProgress(redis, eventId),
-            saveProgress: (eventId, patch) => saveEventProgress(redis, eventId, patch),
-          });
-        } catch (error) {
-          await releaseEvent(redis, parsed.eventId);
-          throw error;
-        }
+  const onEvent = async (payload: Record<string, unknown>) => {
+    const header = payload.header as { event_type?: string } | undefined;
+    const eventType = header?.event_type;
+    if (eventType === "im.chat.member.bot.added_v1") {
+      const parsed = parseBotAdded(payload);
+      if (!parsed) {
         return;
       }
-      if (eventType === "im.message.receive_v1") {
-        const parsed = parseReceiveMessage(payload);
-        if (!parsed) {
-          return;
-        }
+      const claimed = await claimEvent(redis, parsed.eventId);
+      if (!claimed) {
+        return;
+      }
+      try {
         await store.ensureTenant(parsed.tenantKey);
-        await handleMessageReceive(parsed, {
-          claimEvent: (eventId) => claimEvent(redis, eventId),
-          botOpenId: () => feishu.botOpenId(),
+        await handleBotAdded(parsed, {
           getChat: (chatId) => feishu.getChat(chatId),
           lookupGrant: (tenantKey, chatId) => store.lookupGrant(tenantKey, chatId),
-          findSession: (input) => store.findSession(input),
-          createSession: (input) => store.createSession(input),
-          archiveSession: (id) => store.archiveSession(id),
-          replyInThread: (messageId, card) => feishu.replyInThread(messageId, card),
           sendText: async (chatId, text) => {
             await feishu.sendText(chatId, text);
           },
-          sendCard: async (chatId, card) => feishu.sendCard(chatId, card),
-          appendUserMessage: (sessionId, openId, text) => store.appendUserMessage(sessionId, openId, text),
-          enqueue: async (job) => {
-            try {
-              await queue.add("session.run", job, {
-                jobId: job.sessionId,
-                removeOnComplete: true,
-                removeOnFail: true,
-              });
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error);
-              if (/already exists|Job is already/i.test(message)) {
-                return;
-              }
-              throw error;
-            }
-          },
-          newId: () => ulid(),
-          getBudget: (tenantKey) => store.getBudget(tenantKey),
-          releaseEvent: (eventId) => releaseEvent(redis, eventId),
           loadProgress: (eventId) => loadEventProgress(redis, eventId),
           saveProgress: (eventId, patch) => saveEventProgress(redis, eventId, patch),
         });
+      } catch (error) {
+        await releaseEvent(redis, parsed.eventId);
+        throw error;
       }
-    },
+      return;
+    }
+    if (eventType === "im.message.receive_v1") {
+      const parsed = parseReceiveMessage(payload);
+      if (!parsed) {
+        return;
+      }
+      await store.ensureTenant(parsed.tenantKey);
+      await handleMessageReceive(parsed, {
+        claimEvent: (eventId) => claimEvent(redis, eventId),
+        botOpenId: () => feishu.botOpenId(),
+        getChat: (chatId) => feishu.getChat(chatId),
+        lookupGrant: (tenantKey, chatId) => store.lookupGrant(tenantKey, chatId),
+        findSession: (input) => store.findSession(input),
+        createSession: (input) => store.createSession(input),
+        archiveSession: (id) => store.archiveSession(id),
+        replyInThread: (messageId, card) => feishu.replyInThread(messageId, card),
+        sendText: async (chatId, text) => {
+          await feishu.sendText(chatId, text);
+        },
+        sendCard: async (chatId, card) => feishu.sendCard(chatId, card),
+        appendUserMessage: (sessionId, openId, text) => store.appendUserMessage(sessionId, openId, text),
+        enqueue: async (job) => {
+          try {
+            await queue.add("session.run", job, {
+              jobId: job.sessionId,
+              removeOnComplete: true,
+              removeOnFail: true,
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (/already exists|Job is already/i.test(message)) {
+              return;
+            }
+            throw error;
+          }
+        },
+        newId: () => ulid(),
+        getBudget: (tenantKey) => store.getBudget(tenantKey),
+        releaseEvent: (eventId) => releaseEvent(redis, eventId),
+        loadProgress: (eventId) => loadEventProgress(redis, eventId),
+        saveProgress: (eventId, patch) => saveEventProgress(redis, eventId, patch),
+      });
+    }
+  };
+
+  const app = createGatewayApp({
+    encryptKey: env.FEISHU_ENCRYPT_KEY,
+    verificationToken: env.FEISHU_VERIFICATION_TOKEN,
+    onEvent,
   });
 
   const port = Number(process.env.PORT ?? 3000);
   serve({ fetch: app.fetch, port });
-  console.log(`feishu-gateway listening on ${port}`);
+  console.log(`feishu-gateway listening on ${port} (events: ${mode})`);
+
+  if (mode === "websocket") {
+    await startFeishuLongConnection({
+      mode,
+      appId: env.FEISHU_APP_ID,
+      appSecret: env.FEISHU_APP_SECRET,
+      eventDispatcher: createFeishuEventDispatcher({
+        onEvent,
+        encryptKey: env.FEISHU_ENCRYPT_KEY,
+        verificationToken: env.FEISHU_VERIFICATION_TOKEN,
+      }),
+    });
+  }
 }
 
 const entry = process.argv[1];

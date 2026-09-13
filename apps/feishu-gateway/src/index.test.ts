@@ -40,6 +40,25 @@ function signedEncryptRequest(payload: Record<string, unknown>, nonce: string) {
 }
 
 describe("createGatewayApp webhook auth", () => {
+  it("accepts plaintext events when Encrypt Key is not configured", async () => {
+    const seen: unknown[] = [];
+    const app = createGatewayApp({
+      onEvent: async (payload) => {
+        seen.push(payload);
+      },
+    });
+    const body = JSON.stringify(eventPayload());
+    const res = await app.request("/feishu/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    expect(res.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(seen).toHaveLength(1);
+    });
+  });
+
   it("rejects plaintext events when an encrypt key is configured", async () => {
     const seen: unknown[] = [];
     const app = createGatewayApp({
