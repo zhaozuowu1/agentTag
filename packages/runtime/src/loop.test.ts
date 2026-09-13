@@ -73,7 +73,7 @@ describe("runAgentLoop", () => {
     const patches: AgentTurnResult[] = [];
     const result = await runAgentLoop({
       llm,
-      model: "claude-sonnet-4-6",
+      model: "qwen-plus",
       system: "你是飞书群里的队友 Claude。",
       messages: [{ role: "user", content: "总结本群未关闭事项" }],
       tools: {
@@ -109,7 +109,7 @@ describe("runAgentLoop", () => {
     await expect(
       runAgentLoop({
         llm,
-        model: "claude-sonnet-4-6",
+        model: "qwen-plus",
         system: "you",
         messages: [{ role: "user", content: "hi" }],
         tools: {
@@ -137,7 +137,7 @@ describe("runAgentLoop", () => {
     await expect(
       runAgentLoop({
         llm,
-        model: "claude-sonnet-4-6",
+        model: "qwen-plus",
         system: "you",
         messages: [{ role: "user", content: "hi" }],
         tools: {},

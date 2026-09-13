@@ -15,7 +15,6 @@
     "@agenttag/feishu": "workspace:*",
     "@agenttag/memory": "workspace:*",
     "@agenttag/runtime": "workspace:*",
-    "@anthropic-ai/sdk": "^0.65.0",
     "bullmq": "^5.58.5",
     "drizzle-orm": "^0.45.2",
     "ioredis": "^5.8.0",
