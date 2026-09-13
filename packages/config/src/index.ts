@@ -64,6 +64,9 @@ export function resolveFeishuEventMode(
   if (explicit === "http" || explicit === "webhook") {
     return "http";
   }
+  if (explicit) {
+    throw new Error(`未知的 FEISHU_EVENT_MODE: ${explicit}`);
+  }
   if (input.nodeEnv === "development" || input.nodeEnv === "test") {
     return "websocket";
   }

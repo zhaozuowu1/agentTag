@@ -98,6 +98,15 @@ describe("resolveFeishuEventMode", () => {
     expect(resolveFeishuEventMode({ nodeEnv: "development", eventMode: "http" })).toBe("http");
     expect(resolveFeishuEventMode({ nodeEnv: "development", eventMode: "webhook" })).toBe("http");
   });
+
+  it("rejects an unknown FEISHU_EVENT_MODE instead of falling back", () => {
+    expect(() => resolveFeishuEventMode({ nodeEnv: "production", eventMode: "websokcet" })).toThrow(
+      /FEISHU_EVENT_MODE/,
+    );
+    expect(() => resolveFeishuEventMode({ nodeEnv: "development", eventMode: "httpp" })).toThrow(
+      /FEISHU_EVENT_MODE/,
+    );
+  });
 });
 
 describe("requireEncryptKeyIfHttp", () => {
