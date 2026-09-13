@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AgentTurnResult } from "@agenttag/domain";
-import { FEISHU_MESSAGE_TOOL_DEFS } from "./tools/feishu-messages.ts";
+import type { FeishuClient, FeishuMessage } from "@agenttag/feishu";
+import { createMemoryStore } from "@agenttag/memory";
+import { createFeishuMessageTools, FEISHU_MESSAGE_TOOL_DEFS } from "./tools/feishu-messages.ts";
+import { createMemoryTools } from "./tools/memory.ts";
 import { runAgentLoop } from "./loop.ts";
 import {
   createOpenAiCompatLlm,
@@ -240,5 +243,147 @@ describe("createOpenAiCompatLlm", () => {
       const message = error instanceof Error ? error.message : String(error);
       expect(message).not.toContain("sk-dashscope-test");
     }
+  });
+
+  it("does not run memory_upsert when tool arguments are truncated JSON", async () => {
+    const store = createMemoryStore();
+    const tools = createMemoryTools(store, {
+      tenantKey: "tenant_demo",
+      chatId: "oc_auth",
+      openId: "ou_user",
+      chatType: "private",
+      sessionId: "sess_1",
+    });
+    const llm = createOpenAiCompatLlm({
+      apiKey: "sk-dashscope-test",
+      baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: "tool_calls",
+                message: {
+                  role: "assistant",
+                  content: "",
+                  tool_calls: [
+                    {
+                      id: "call_1",
+                      type: "function",
+                      function: {
+                        name: "memory_upsert",
+                        arguments: '{"kind":"fact","text":"周报用表格"',
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { prompt_tokens: 8, completion_tokens: 4 },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    });
+    await expect(
+      runAgentLoop({
+        llm,
+        model: "qwen-plus",
+        system: "you",
+        messages: [{ role: "user", content: "记住周报用表格" }],
+        tools: { memory_upsert: tools.memory_upsert },
+        initial: empty,
+        onTurn: async () => {},
+      }),
+    ).rejects.toThrow(/合法 JSON/);
+    expect(await store.list({ tenantKey: "tenant_demo", chatId: "oc_auth" })).toEqual([]);
+  });
+
+  it("does not run feishu_search_messages when tool arguments are truncated JSON", async () => {
+    const listCalls: Array<{ container: string; id: string }> = [];
+    const tools = createFeishuMessageTools(
+      {
+        botOpenId: async () => "ou_bot",
+        replyInThread: async () => ({ messageId: "om_x", threadId: "omt_x" }),
+        patchCard: async () => {},
+        sendText: async () => ({ messageId: "om_t" }),
+        sendCard: async () => ({ messageId: "om_card" }),
+        getChat: async () => ({ chatType: "private", external: false, name: "群" }),
+        listMessages: async (opts) => {
+          listCalls.push({ container: opts.container, id: opts.id });
+          return [] as FeishuMessage[];
+        },
+      } satisfies FeishuClient,
+      { chatId: "oc_auth", threadId: "omt_1" },
+    );
+    const llm = createOpenAiCompatLlm({
+      apiKey: "sk-dashscope-test",
+      baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: "tool_calls",
+                message: {
+                  role: "assistant",
+                  content: "",
+                  tool_calls: [
+                    {
+                      id: "call_1",
+                      type: "function",
+                      function: {
+                        name: "feishu_search_messages",
+                        arguments: '{"query":"未关闭',
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { prompt_tokens: 8, completion_tokens: 4 },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    });
+    await expect(
+      runAgentLoop({
+        llm,
+        model: "qwen-plus",
+        system: "you",
+        messages: [{ role: "user", content: "搜未关闭事项" }],
+        tools: { feishu_search_messages: tools.feishu_search_messages },
+        initial: empty,
+        onTurn: async () => {},
+      }),
+    ).rejects.toThrow(/合法 JSON/);
+    expect(listCalls).toEqual([]);
+  });
+});
+
+describe("fromOpenAiChatResponse invalid tool arguments", () => {
+  it("rejects truncated tool-call JSON instead of mapping it to {}", () => {
+    expect(() =>
+      fromOpenAiChatResponse({
+        choices: [
+          {
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "memory_upsert",
+                    arguments: '{"kind":"fact","text":"周报用表格"',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toThrow(/合法 JSON/);
   });
 });

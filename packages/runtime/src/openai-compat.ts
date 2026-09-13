@@ -207,7 +207,7 @@ function parseArguments(raw: unknown): unknown {
   try {
     return JSON.parse(raw) as unknown;
   } catch {
-    return {};
+    throw new Error("工具参数不是合法 JSON");
   }
 }
 
