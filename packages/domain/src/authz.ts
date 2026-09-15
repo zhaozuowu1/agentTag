@@ -21,10 +21,12 @@ export function shouldRunInChat(input: {
   return "run";
 }
 
-export function botAddedText(decision: RunDecision): string | null {
+export function botAddedText(decision: RunDecision, modelId?: string): string | null {
   switch (decision) {
     case "run":
-      return "我是本群队友，@ 我即可把任务交给我。";
+      return modelId
+        ? `我是本群队友（\`${modelId}\`），@ 我即可把任务交给我。`
+        : "我是本群队友，@ 我即可把任务交给我。";
     case "explain_unauthorized":
       return "请管理员在 AgentTag 控制台授权本群后，我才能执行任务。";
     case "explain_p2p":

@@ -39,6 +39,12 @@ describe("botAddedText", () => {
   it("introduces itself as a teammate in authorized chats", () => {
     expect(botAddedText("run")).toContain("@");
     expect(botAddedText("run")).toContain("队友");
+    expect(botAddedText("run")).not.toContain("Claude");
+  });
+
+  it("puts the runtime model id into the authorized welcome text", () => {
+    expect(botAddedText("run", "qwen3.8-max")).toBe("我是本群队友（`qwen3.8-max`），@ 我即可把任务交给我。");
+    expect(botAddedText("explain_unauthorized", "qwen3.8-max")).not.toContain("qwen3.8-max");
   });
 
   it("does not speak in external chats", () => {
