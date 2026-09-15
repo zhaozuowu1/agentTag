@@ -3,6 +3,7 @@ import { createDb, authorizedChats, memoryEntries, tenants, usageEvents } from "
 import {
   DASHSCOPE_MODEL_CATALOG,
   DEFAULT_DASHSCOPE_MODEL,
+  parseSavedModelId,
   resolveRuntimeModel,
   tokensToUsd,
 } from "@agenttag/domain";
@@ -51,6 +52,7 @@ function modelSnapshot(tenantRow: { modelId: string | null; enableThinking: bool
     enableThinking: resolved.enableThinking,
     source: resolved.source,
     tenantModelId: tenantRow?.modelId ?? null,
+    envModelId: envModelId(),
     catalog: DASHSCOPE_MODEL_CATALOG,
   };
 }
@@ -140,6 +142,12 @@ export async function PATCH(req: Request) {
   const tenantKey = body.tenantKey ?? "default";
   const database = db();
   if ("modelId" in body || "enableThinking" in body) {
+    if ("modelId" in body) {
+      const parsed = parseSavedModelId(body.modelId ?? null);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+    }
     await database.insert(tenants).values({ tenantKey }).onConflictDoNothing();
     const currentRows = await database.select().from(tenants).where(eq(tenants.tenantKey, tenantKey)).limit(1);
     const row = {

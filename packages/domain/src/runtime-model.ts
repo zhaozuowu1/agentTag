@@ -153,7 +153,7 @@ export function resolveRuntimeModel(input: {
     modelId = id;
     source = "tenant";
   } else if (!isUnset(input.envModelId)) {
-    modelId = input.envModelId as string;
+    modelId = (input.envModelId as string).trim();
     source = "env";
   } else {
     modelId = DEFAULT_DASHSCOPE_MODEL;

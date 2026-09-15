@@ -80,8 +80,16 @@ export async function runAgentLoop(input: RunAgentLoopInput): Promise<AgentTurnR
       .map((part) => part.text)
       .join("\n")
       .trim();
+    const reasoning = response.content
+      .filter((part): part is { type: "reasoning"; text: string } => part.type === "reasoning")
+      .map((part) => part.text)
+      .join("\n")
+      .trim();
     if (texts) {
       result = { ...result, replyMarkdown: texts };
+    }
+    if (reasoning) {
+      result = { ...result, reasoning };
     }
 
     const toolUses = response.content.filter(
@@ -141,7 +149,7 @@ export async function runAgentLoop(input: RunAgentLoopInput): Promise<AgentTurnR
 }
 
 export function messagesFromTranscript(
-  events: Array<{ type: string; text?: string }>,
+  events: Array<{ type: string; text?: string; reasoning?: string }>,
 ): LlmMessage[] {
   const messages: LlmMessage[] = [];
   for (const event of events) {
@@ -149,7 +157,17 @@ export function messagesFromTranscript(
       messages.push({ role: "user", content: event.text });
     }
     if (event.type === "assistant" && event.text) {
-      messages.push({ role: "assistant", content: event.text });
+      if (event.reasoning) {
+        messages.push({
+          role: "assistant",
+          content: [
+            { type: "reasoning", text: event.reasoning },
+            { type: "text", text: event.text },
+          ],
+        });
+      } else {
+        messages.push({ role: "assistant", content: event.text });
+      }
     }
   }
   return messages;

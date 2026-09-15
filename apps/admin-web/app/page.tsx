@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { thinkingSwitchForSelection } from "../lib/tenant-model.ts";
 
 interface CatalogEntry {
   id: string;
@@ -18,6 +19,7 @@ interface Snapshot {
     enableThinking: boolean;
     source: "chat" | "tenant" | "env";
     tenantModelId: string | null;
+    envModelId: string;
     catalog: CatalogEntry[];
   };
   memories: Array<{ id: string; chatId: string | null; kind: string; text: string }>;
@@ -42,7 +44,7 @@ export default function AdminPage() {
   );
 
   const selected = useMemo(() => {
-    const previewId = modelId || data?.model.modelId;
+    const previewId = modelId || data?.model.envModelId || data?.model.modelId;
     return data?.model.catalog.find((entry) => entry.id === previewId);
   }, [data, modelId]);
   const alwaysThinking = selected?.thinking === "always";
@@ -201,11 +203,17 @@ export default function AdminPage() {
                 value={modelId}
                 onChange={(event) => {
                   const next = event.target.value;
+                  const previousMode = selected?.thinking;
+                  const previewId = next || data.model.envModelId;
+                  const nextMode = data.model.catalog.find((item) => item.id === previewId)?.thinking;
                   setModelId(next);
-                  const entry = data.model.catalog.find((item) => item.id === next);
-                  if (entry?.thinking === "always") {
-                    setEnableThinking(true);
-                  }
+                  setEnableThinking(
+                    thinkingSwitchForSelection({
+                      previousMode,
+                      nextMode,
+                      currentEnableThinking: enableThinking,
+                    }),
+                  );
                 }}
               >
                 <option value="">跟随环境变量 DASHSCOPE_MODEL</option>

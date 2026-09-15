@@ -75,7 +75,10 @@ export function dashscopeFailureReply(error: unknown, modelId: string): string {
   if (/Model not exist|does not exist|Unsupported model|compatibility mode/i.test(combined)) {
     return `模型 \`${modelId}\` 不可用或未开通，请在百炼控制台开通或在管理台改回目录内模型`;
   }
-  if (/NotSupportEnableThinking|thinking\.type=disabled|enable_thinking/i.test(combined) && /disabled|not support/i.test(combined)) {
+  if (/NotSupportEnableThinking/i.test(combined)) {
+    return "该模型不支持当前思考开关，请关闭思考或改用可关思考的模型";
+  }
+  if (/thinking\.type\s*=\s*disabled|enable_thinking["']?\s*[:=]\s*false/i.test(combined)) {
     return "该模型始终思考，不能关闭";
   }
   if (/reasoning_content|思考块/i.test(combined)) {
@@ -174,7 +177,14 @@ export async function processSessionJob(
       await deps.patchCard(session.checklistMessageId, cardFrom(result, "处理完成", modelId, enableThinking));
       await deps.appendEvents(
         session.id,
-        [{ type: "assistant", text: result.replyMarkdown, at: new Date().toISOString() }],
+        [
+          {
+            type: "assistant",
+            text: result.replyMarkdown,
+            ...(result.reasoning ? { reasoning: result.reasoning } : {}),
+            at: new Date().toISOString(),
+          },
+        ],
         originLength,
       );
       const latest = await deps.loadSession(job.sessionId);

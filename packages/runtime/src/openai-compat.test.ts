@@ -451,6 +451,33 @@ describe("thinking and reasoning_content", () => {
     expect(bodies[0]?.tool_stream).toBeUndefined();
   });
 
+  it("forces thinking on for kimi-k3 even when the caller omits the flag", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const llm = createOpenAiCompatLlm({
+      apiKey: "sk-dashscope-test",
+      baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      fetch: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(
+          JSON.stringify({
+            choices: [{ finish_reason: "stop", message: { role: "assistant", content: "hi" } }],
+            usage: { prompt_tokens: 1, completion_tokens: 1 },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      },
+    });
+    await llm.create({
+      model: "kimi-k3",
+      system: "you",
+      messages: [{ role: "user", content: "你好" }],
+      tools: [],
+    });
+    expect(bodies[0]?.enable_thinking).toBe(true);
+    expect(bodies[0]?.thinking).toEqual({ type: "enabled" });
+    expect(JSON.stringify(bodies[0])).not.toMatch(/disabled/i);
+  });
+
   it.each(["ZHIPU/GLM-5.3", "kimi-k3"] as const)(
     "echoes reasoning_content on the next %s tool-loop request",
     async (modelId) => {

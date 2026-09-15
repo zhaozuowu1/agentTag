@@ -6,7 +6,7 @@ export type ChecklistItem = {
 
 export type TranscriptEvent =
   | { type: "user"; openId: string; text: string; at: string }
-  | { type: "assistant"; text: string; at: string }
+  | { type: "assistant"; text: string; reasoning?: string; at: string }
   | {
       type: "tool_result";
       name: string;
@@ -20,4 +20,6 @@ export interface AgentTurnResult {
   checklist: ChecklistItem[];
   replyMarkdown: string;
   stop: boolean;
+  /** 思维链只进 LLM 历史，不进飞书卡片。 */
+  reasoning?: string;
 }

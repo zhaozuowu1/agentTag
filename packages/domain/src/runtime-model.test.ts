@@ -156,5 +156,11 @@ describe("resolveRuntimeModel", () => {
         envModelId: "qwen3.9-max",
       }),
     ).toMatchObject({ modelId: "qwen3.9-max", source: "env", enableThinking: false });
+    expect(
+      resolveRuntimeModel({
+        tenantModelId: null,
+        envModelId: "  qwen3.9-max  ",
+      }),
+    ).toMatchObject({ modelId: "qwen3.9-max", source: "env" });
   });
 });

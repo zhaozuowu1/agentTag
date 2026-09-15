@@ -22,6 +22,24 @@ describe("messagesFromTranscript", () => {
       { role: "user", content: "改成表格" },
     ]);
   });
+
+  it("replays assistant reasoning so a later job can echo it", () => {
+    expect(
+      messagesFromTranscript([
+        { type: "user", text: "你好" },
+        { type: "assistant", text: "好", reasoning: "先打招呼" },
+      ]),
+    ).toEqual([
+      { role: "user", content: "你好" },
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "先打招呼" },
+          { type: "text", text: "好" },
+        ],
+      },
+    ]);
+  });
 });
 
 describe("reduceToolResult", () => {

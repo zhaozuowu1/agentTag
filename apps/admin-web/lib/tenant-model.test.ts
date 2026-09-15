@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseSavedModelId, resolveRuntimeModel } from "@agenttag/domain";
-import { applyTenantModelPatch, type TenantModelRow } from "./tenant-model.ts";
+import { applyTenantModelPatch, thinkingSwitchForSelection, type TenantModelRow } from "./tenant-model.ts";
 
 describe("applyTenantModelPatch", () => {
   it("rejects illegal ids without mutating the stored row", () => {
@@ -42,6 +42,45 @@ describe("applyTenantModelPatch", () => {
         envModelId: "qwen3.8-max",
       }),
     ).toMatchObject({ modelId: "qwen3.8-max", source: "env" });
+  });
+});
+
+describe("thinkingSwitchForSelection", () => {
+  it("does not keep locked-on thinking after leaving an always-on model", () => {
+    expect(
+      thinkingSwitchForSelection({
+        previousMode: "always",
+        nextMode: "hybrid",
+        currentEnableThinking: true,
+      }),
+    ).toBe(false);
+    expect(
+      thinkingSwitchForSelection({
+        previousMode: "always",
+        nextMode: undefined,
+        currentEnableThinking: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("locks thinking on when selecting an always-on model", () => {
+    expect(
+      thinkingSwitchForSelection({
+        previousMode: "hybrid",
+        nextMode: "always",
+        currentEnableThinking: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a hybrid admin toggle when staying on hybrid models", () => {
+    expect(
+      thinkingSwitchForSelection({
+        previousMode: "hybrid",
+        nextMode: "hybrid",
+        currentEnableThinking: true,
+      }),
+    ).toBe(true);
   });
 });
 

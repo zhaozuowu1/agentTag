@@ -1,5 +1,5 @@
 import type { LlmClient, LlmContent, LlmMessage, LlmResponse } from "./loop.ts";
-import { dashscopeMaxTokens } from "@agenttag/domain";
+import { catalogEntry, dashscopeMaxTokens } from "@agenttag/domain";
 
 export interface OpenAiCompatConfig {
   apiKey: string;
@@ -170,7 +170,7 @@ export function createOpenAiCompatLlm(config: OpenAiCompatConfig): LlmClient {
   return {
     async create(params) {
       const tools = toOpenAiTools(Array.isArray(params.tools) ? params.tools : []);
-      const enableThinking = params.enableThinking === true;
+      const enableThinking = catalogEntry(params.model)?.thinking === "always" || params.enableThinking === true;
       const body: Record<string, unknown> = {
         model: params.model,
         messages: toOpenAiMessages(params.system, params.messages),
