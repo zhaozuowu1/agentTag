@@ -27,4 +27,22 @@ describe("drizzle migration snapshots", () => {
     expect(col.notNull).toBe(false);
     expect(col.default).toBeUndefined();
   });
+
+  it("records tenants.model_id and enable_thinking in the 0002 snapshot", () => {
+    const snapshot = JSON.parse(readFileSync(join(metaDir, "0002_snapshot.json"), "utf8")) as {
+      prevId: string;
+      tables: {
+        "public.tenants": {
+          columns: {
+            model_id: { notNull: boolean };
+            enable_thinking: { notNull: boolean; default?: string };
+          };
+        };
+      };
+    };
+    expect(snapshot.prevId).toBe("91819966-8b99-4123-ac9b-c9a073f60c86");
+    expect(snapshot.tables["public.tenants"].columns.model_id.notNull).toBe(false);
+    expect(snapshot.tables["public.tenants"].columns.enable_thinking.notNull).toBe(true);
+    expect(snapshot.tables["public.tenants"].columns.enable_thinking.default).toBe(false);
+  });
 });

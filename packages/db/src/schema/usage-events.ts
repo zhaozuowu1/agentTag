@@ -11,5 +11,6 @@ export const usageEvents = pgTable("usage_events", {
   openId: text("open_id").notNull(),
   inputTokens: integer("input_tokens").notNull(),
   outputTokens: integer("output_tokens").notNull(),
+  modelId: text("model_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

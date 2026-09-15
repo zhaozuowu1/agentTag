@@ -15,6 +15,13 @@
       "when": 1789179000000,
       "tag": "0001_nullable_monthly_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789300000000,
+      "tag": "0002_tenant_model_config",
+      "breakpoints": true
     }
   ]
 }
