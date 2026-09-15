@@ -28,4 +28,10 @@ describe("core drizzle schema", () => {
       ["addedAt", "chatId", "chatType", "enabled", "tenantKey"].sort(),
     );
   });
+
+  it("tenants stores an optional global model override and thinking switch", () => {
+    expect(columnNames(tenants)).toEqual(
+      ["createdAt", "displayName", "enableThinking", "modelId", "monthlyLimitUsd", "tenantKey"].sort(),
+    );
+  });
 });

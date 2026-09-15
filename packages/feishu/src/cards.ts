@@ -11,6 +11,8 @@ export interface ProgressCardInput {
   statusText: string;
   checklist: ProgressCardItem[];
   markdown?: string;
+  modelId?: string;
+  enableThinking?: boolean;
 }
 
 const marks: Record<string, string> = {
@@ -20,9 +22,18 @@ const marks: Record<string, string> = {
   blocked: "⚠",
 };
 
+export function progressCardSubtitle(modelId: string, enableThinking: boolean): string {
+  return enableThinking ? `${modelId} · 思考` : modelId;
+}
+
+export function modelFooterLine(modelId: string): string {
+  return `模型：\`${modelId}\``;
+}
+
 export function progressCard(input: ProgressCardInput) {
   const items = input.checklist.map((item) => `${marks[item.status] ?? "☐"} ${item.label}`);
-  const content = [input.statusText, ...items, input.markdown]
+  const modelLine = input.modelId ? modelFooterLine(input.modelId) : undefined;
+  const content = [input.statusText, ...items, input.markdown, modelLine]
     .filter((part): part is string => Boolean(part && part.length > 0))
     .join("\n");
 
@@ -36,6 +47,14 @@ export function progressCard(input: ProgressCardInput) {
         tag: "plain_text" as const,
         content: input.title,
       },
+      ...(input.modelId
+        ? {
+            subtitle: {
+              tag: "plain_text" as const,
+              content: progressCardSubtitle(input.modelId, input.enableThinking === true),
+            },
+          }
+        : {}),
       template: "blue",
     },
     body: {

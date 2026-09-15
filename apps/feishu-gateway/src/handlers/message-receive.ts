@@ -22,6 +22,12 @@ export interface ReceiveMessageEvent {
   mentionOpenIds: string[];
 }
 
+export interface RuntimeModelSnapshot {
+  modelId: string;
+  enableThinking: boolean;
+  source: "chat" | "tenant" | "env";
+}
+
 export interface MessageReceiveDeps {
   claimEvent(eventId: string): Promise<boolean>;
   botOpenId(): Promise<string>;
@@ -55,6 +61,7 @@ export interface MessageReceiveDeps {
   enqueue(job: { sessionId: string }): Promise<void>;
   newId: () => string;
   getBudget(tenantKey: string): Promise<{ usedUsd: number; limitUsd: number | null }>;
+  getRuntimeModel(tenantKey: string): Promise<RuntimeModelSnapshot>;
   releaseEvent(eventId: string): Promise<void>;
   loadProgress(eventId: string): Promise<EventProgress | null>;
   saveProgress(eventId: string, patch: EventProgress): Promise<void>;
@@ -152,11 +159,14 @@ async function handleClaimedMessage(
 
   if (decision.type === "steer") {
     const budget = await retryOp(deps, () => deps.getBudget(event.tenantKey));
+    const runtime = await retryOp(deps, () => deps.getRuntimeModel(event.tenantKey));
     if (!canStartSession(budget.usedUsd, budget.limitUsd)) {
       const card = progressCard({
         title: "本月额度已用完",
         statusText: "本月额度已用完",
         checklist: [],
+        modelId: runtime.modelId,
+        enableThinking: runtime.enableThinking,
       });
       await deps.replyInThread(event.messageId, card);
       return;
@@ -174,11 +184,14 @@ async function handleClaimedMessage(
   }
 
   const budget = await retryOp(deps, () => deps.getBudget(event.tenantKey));
+  const runtime = await retryOp(deps, () => deps.getRuntimeModel(event.tenantKey));
   if (!canStartSession(budget.usedUsd, budget.limitUsd)) {
     const card = progressCard({
       title: "本月额度已用完",
       statusText: "本月额度已用完",
       checklist: [],
+      modelId: runtime.modelId,
+      enableThinking: runtime.enableThinking,
     });
     await deps.replyInThread(event.messageId, card);
     return;
@@ -190,6 +203,8 @@ async function handleClaimedMessage(
     title: "收到，正在处理",
     statusText: "已排队，我会在话题里更新进度。",
     checklist: [{ id: "queue", label: "开始处理", status: "doing" }],
+    modelId: runtime.modelId,
+    enableThinking: runtime.enableThinking,
   });
   let reply = progress.card;
   if (!reply) {

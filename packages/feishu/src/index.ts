@@ -1,4 +1,4 @@
-export { progressCard, stringifyCard } from "./cards.ts";
+export { progressCard, progressCardSubtitle, modelFooterLine, stringifyCard } from "./cards.ts";
 export { createFeishuClient } from "./client.ts";
 export type { ChecklistStatus, ProgressCardInput, ProgressCardItem } from "./cards.ts";
 export type {

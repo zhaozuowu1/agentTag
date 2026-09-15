@@ -63,6 +63,7 @@ function createDeps(overrides: Partial<MessageReceiveDeps> = {}) {
     },
     newId: () => "sess_1",
     getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+    getRuntimeModel: async () => ({ modelId: "qwen3.8-max", enableThinking: false, source: "env" as const }),
     releaseEvent: async (eventId) => {
       claimed.delete(eventId);
     },
@@ -87,6 +88,20 @@ describe("handleMessageReceive", () => {
     expect(card.schema).toBe("2.0");
     expect(card.header?.title?.content).toBe("收到，正在处理");
     expect(deps.enqueued).toEqual([{ sessionId: "sess_1" }]);
+  });
+
+  it("puts the tenant model id on the first received card before the worker runs", async () => {
+    const deps = createDeps({
+      getRuntimeModel: async () => ({ modelId: "qwen3.7-plus", enableThinking: false, source: "tenant" }),
+    });
+    await handleMessageReceive(event, deps);
+    const card = deps.replies[0]?.card as {
+      header?: { title?: { content?: string }; subtitle?: { content?: string } };
+      body?: { elements?: Array<{ content?: string }> };
+    };
+    expect(card.header?.title?.content).toBe("收到，正在处理");
+    expect(card.header?.subtitle?.content).toBe("qwen3.7-plus");
+    expect(card.body?.elements?.[0]?.content).toContain("模型：`qwen3.7-plus`");
   });
 
   it("ignores mentions in unauthorized chats without enqueueing", async () => {
@@ -149,8 +164,9 @@ describe("handleMessageReceive", () => {
     });
     await handleMessageReceive({ ...event, eventId: "ev_budget" }, deps);
     expect(deps.enqueued).toEqual([]);
-    const card = deps.replies[0]?.card as { header?: { title?: { content?: string } } };
+    const card = deps.replies[0]?.card as { header?: { title?: { content?: string }; subtitle?: { content?: string } } };
     expect(card.header?.title?.content).toBe("本月额度已用完");
+    expect(card.header?.subtitle?.content).toBe("qwen3.8-max");
   });
 
   it("rejects in-thread steer when the tenant monthly budget is exhausted", async () => {

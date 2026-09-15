@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { processSessionJob, type WorkerSession } from "./process-session.ts";
+import { dashscopeFailureReply, processSessionJob, type WorkerSession } from "./process-session.ts";
 import type { LlmClient } from "@agenttag/runtime";
 
 function session(): WorkerSession {
@@ -232,7 +232,7 @@ describe("processSessionJob", () => {
     expect(model).toBe("qwen-max");
   });
 
-  it("defaults the model id to qwen-plus", async () => {
+  it("defaults the model id to qwen3.8-max", async () => {
     let model = "";
     const llm: LlmClient = {
       async create(params) {
@@ -258,6 +258,243 @@ describe("processSessionJob", () => {
         getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
       },
     );
-    expect(model).toBe("qwen-plus");
+    expect(model).toBe("qwen3.8-max");
+  });
+
+  it("injects the real model id and never claims to be Claude", async () => {
+    let system = "";
+    const llm: LlmClient = {
+      async create(params) {
+        system = params.system;
+        return {
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: "结论" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+    await processSessionJob(
+      { sessionId: "sess_1" },
+      {
+        llm,
+        model: "qwen3.8-max",
+        loadSession: async () => session(),
+        patchCard: async () => {},
+        recordUsage: async () => {},
+        recordAudit: async () => {},
+        markSession: async () => {},
+        appendEvents: async () => {},
+        listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+      },
+    );
+    expect(system).toContain("qwen3.8-max");
+    expect(system).toContain("不要自称 Claude");
+    expect(system).not.toMatch(/队友 Claude/);
+  });
+
+  it("does not turn thinking on just because the user asked to think step by step", async () => {
+    let enableThinking: boolean | undefined;
+    const llm: LlmClient = {
+      async create(params) {
+        enableThinking = params.enableThinking;
+        return {
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: "结论" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+    const row = session();
+    row.transcript = [{ type: "user", openId: "ou_user", text: "请一步一步思考后再回答", at: "t" }];
+    await processSessionJob(
+      { sessionId: "sess_1" },
+      {
+        llm,
+        model: "qwen3.8-max",
+        enableThinking: false,
+        loadSession: async () => row,
+        patchCard: async () => {},
+        recordUsage: async () => {},
+        recordAudit: async () => {},
+        markSession: async () => {},
+        appendEvents: async () => {},
+        listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+      },
+    );
+    expect(enableThinking).toBe(false);
+  });
+
+  it("fails closed on Model not exist without retrying a weaker model", async () => {
+    let called = 0;
+    const patches: unknown[] = [];
+    const llm: LlmClient = {
+      async create() {
+        called += 1;
+        throw Object.assign(new Error("模型接口 400"), {
+          status: 400,
+          dashscopeMessage: "The model xxx does not exist",
+        });
+      },
+    };
+    const statuses: string[] = [];
+    await processSessionJob(
+      { sessionId: "sess_1" },
+      {
+        llm,
+        model: "qwen3.8-max",
+        loadSession: async () => session(),
+        patchCard: async (_id, card) => {
+          patches.push(card);
+        },
+        recordUsage: async () => {},
+        recordAudit: async () => {},
+        markSession: async (_id, status) => {
+          statuses.push(status);
+        },
+        appendEvents: async () => {},
+        listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+      },
+    );
+    expect(called).toBe(1);
+    expect(statuses).toContain("failed");
+    const blob = JSON.stringify(patches);
+    expect(blob).toContain("处理失败");
+    expect(blob).toContain("qwen3.8-max");
+    expect(blob).toMatch(/不可用或未开通/);
+    expect(blob).not.toContain("qwen-plus");
+    expect(blob).not.toContain("sk-");
+  });
+
+  it("puts the model id on every progress card patch", async () => {
+    const patches: unknown[] = [];
+    const llm: LlmClient = {
+      async create() {
+        return {
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: "结论：两件未关闭事项。" }],
+          usage: { input_tokens: 3, output_tokens: 4 },
+        };
+      },
+    };
+    await processSessionJob(
+      { sessionId: "sess_1" },
+      {
+        llm,
+        model: "kimi-k3",
+        enableThinking: true,
+        loadSession: async () => session(),
+        patchCard: async (_id, card) => {
+          patches.push(card);
+        },
+        recordUsage: async () => {},
+        recordAudit: async () => {},
+        markSession: async () => {},
+        appendEvents: async () => {},
+        listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+      },
+    );
+    expect(patches.length).toBeGreaterThan(0);
+    for (const card of patches) {
+      const typed = card as { header?: { subtitle?: { content?: string } }; body?: { elements?: Array<{ content?: string }> } };
+      expect(typed.header?.subtitle?.content).toContain("kimi-k3");
+      expect(typed.body?.elements?.[0]?.content).toContain("模型：`kimi-k3`");
+    }
+  });
+
+  it("echoes reasoning on the next round after a thinking turn so Kimi steer does not drop it", async () => {
+    const db = session();
+    const seen: unknown[] = [];
+    const llm: LlmClient = {
+      async create(params) {
+        seen.push(params.messages);
+        if (seen.length === 1) {
+          db.transcript.push({
+            type: "user",
+            openId: "ou_user",
+            text: "把结论改成表格",
+            at: "t2",
+          });
+          return {
+            stop_reason: "end_turn",
+            content: [
+              { type: "reasoning", text: "kimi-k3 思考块" },
+              { type: "text", text: "初稿" },
+            ],
+            usage: { input_tokens: 3, output_tokens: 4 },
+          };
+        }
+        return {
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: "表格版" }],
+          usage: { input_tokens: 3, output_tokens: 4 },
+        };
+      },
+    };
+    await processSessionJob(
+      { sessionId: "sess_1" },
+      {
+        llm,
+        model: "kimi-k3",
+        enableThinking: true,
+        loadSession: async () => ({ ...db, transcript: [...db.transcript] }),
+        patchCard: async () => {},
+        recordUsage: async () => {},
+        recordAudit: async () => {},
+        markSession: async (_id, status) => {
+          db.status = status;
+        },
+        appendEvents: async (_id, events, atIndex) => {
+          if (atIndex == null) {
+            db.transcript.push(...events);
+          } else {
+            db.transcript.splice(atIndex, 0, ...events);
+          }
+        },
+        listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+      },
+    );
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(seen[1])).toContain("kimi-k3 思考块");
+    expect(JSON.stringify(seen[1])).not.toContain("sk-");
+  });
+});
+
+describe("dashscopeFailureReply", () => {
+  it("maps model-missing, thinking-switch, and always-on disabled errors without echoing secrets", () => {
+    expect(
+      dashscopeFailureReply(
+        Object.assign(new Error("模型接口 400"), { status: 400, dashscopeMessage: "The model xxx does not exist" }),
+        "qwen3.8-max",
+      ),
+    ).toContain("不可用或未开通");
+    expect(
+      dashscopeFailureReply(
+        Object.assign(new Error("模型接口 400"), { status: 400, dashscopeMessage: "InvalidParameter.NotSupportEnableThinking" }),
+        "qwen3.8-max",
+      ),
+    ).toContain("不支持当前思考开关");
+    expect(
+      dashscopeFailureReply(
+        Object.assign(new Error("模型接口 400"), { status: 400, dashscopeMessage: "thinking.type=disabled is not allowed" }),
+        "ZHIPU/GLM-5.3",
+      ),
+    ).toBe("该模型始终思考，不能关闭");
+    expect(
+      dashscopeFailureReply(
+        Object.assign(new Error("模型接口 401"), { status: 401, dashscopeMessage: "invalid sk-dashscope-test" }),
+        "qwen3.8-max",
+      ),
+    ).toBe("模型接口 401");
+    expect(
+      dashscopeFailureReply(
+        Object.assign(new Error("模型接口 401"), { status: 401, dashscopeMessage: "invalid sk-dashscope-test" }),
+        "qwen3.8-max",
+      ),
+    ).not.toContain("sk-dashscope-test");
   });
 });

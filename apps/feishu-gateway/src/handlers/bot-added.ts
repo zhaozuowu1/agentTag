@@ -11,6 +11,7 @@ export interface BotAddedEvent {
 export interface BotAddedDeps {
   getChat(chatId: string): Promise<{ chatType: ChatType; external: boolean; name: string }>;
   lookupGrant(tenantKey: string, chatId: string): Promise<{ authorized: boolean; enabled: boolean }>;
+  getRuntimeModel(tenantKey: string): Promise<{ modelId: string; enableThinking: boolean; source: "chat" | "tenant" | "env" }>;
   sendText(chatId: string, text: string): Promise<void>;
   loadProgress(eventId: string): Promise<EventProgress | null>;
   saveProgress(eventId: string, patch: EventProgress): Promise<void>;
@@ -32,7 +33,7 @@ export async function handleBotAdded(event: BotAddedEvent, deps: BotAddedDeps): 
     chatType: chat.chatType,
     allowP2p: false,
   });
-  const text = botAddedText(decision);
+  const text = botAddedText(decision, decision === "run" ? (await deps.getRuntimeModel(event.tenantKey)).modelId : undefined);
   if (text) {
     await deps.sendText(event.chatId, text);
     const next = mergeProgress(progress, { welcomeSent: true });

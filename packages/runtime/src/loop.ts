@@ -2,6 +2,7 @@ import type { AgentTurnResult, TranscriptEvent } from "@agenttag/domain";
 
 export type LlmContent =
   | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_use_id: string; content: string };
 
@@ -22,6 +23,7 @@ export interface LlmClient {
     system: string;
     messages: LlmMessage[];
     tools: unknown[];
+    enableThinking?: boolean;
   }): Promise<LlmResponse>;
 }
 
@@ -37,6 +39,7 @@ export interface RunAgentLoopInput {
   onUsage?: (usage: { input_tokens: number; output_tokens: number }) => Promise<void>;
   onToolError?: (error: { name: string; message: string }) => Promise<void>;
   maxTurns?: number;
+  enableThinking?: boolean;
 }
 
 export function reduceToolResult(prev: AgentTurnResult, event: TranscriptEvent): AgentTurnResult {
@@ -68,6 +71,7 @@ export async function runAgentLoop(input: RunAgentLoopInput): Promise<AgentTurnR
       system: input.system,
       messages,
       tools: input.toolDefs ?? defaultToolDefs(Object.keys(input.tools)),
+      enableThinking: input.enableThinking,
     });
     await input.onUsage?.(response.usage);
 
@@ -76,8 +80,16 @@ export async function runAgentLoop(input: RunAgentLoopInput): Promise<AgentTurnR
       .map((part) => part.text)
       .join("\n")
       .trim();
+    const reasoning = response.content
+      .filter((part): part is { type: "reasoning"; text: string } => part.type === "reasoning")
+      .map((part) => part.text)
+      .join("\n")
+      .trim();
     if (texts) {
       result = { ...result, replyMarkdown: texts };
+    }
+    if (reasoning) {
+      result = { ...result, reasoning };
     }
 
     const toolUses = response.content.filter(
@@ -137,7 +149,7 @@ export async function runAgentLoop(input: RunAgentLoopInput): Promise<AgentTurnR
 }
 
 export function messagesFromTranscript(
-  events: Array<{ type: string; text?: string }>,
+  events: Array<{ type: string; text?: string; reasoning?: string }>,
 ): LlmMessage[] {
   const messages: LlmMessage[] = [];
   for (const event of events) {
@@ -145,7 +157,17 @@ export function messagesFromTranscript(
       messages.push({ role: "user", content: event.text });
     }
     if (event.type === "assistant" && event.text) {
-      messages.push({ role: "assistant", content: event.text });
+      if (event.reasoning) {
+        messages.push({
+          role: "assistant",
+          content: [
+            { type: "reasoning", text: event.reasoning },
+            { type: "text", text: event.text },
+          ],
+        });
+      } else {
+        messages.push({ role: "assistant", content: event.text });
+      }
     }
   }
   return messages;
