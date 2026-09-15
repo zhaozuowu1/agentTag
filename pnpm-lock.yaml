@@ -158,6 +158,9 @@ importers:
 
   packages/config:
     dependencies:
+      '@agenttag/domain':
+        specifier: workspace:*
+        version: link:../domain
       zod:
         specifier: ^3.25.76
         version: 3.25.76

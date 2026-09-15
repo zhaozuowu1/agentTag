@@ -2,7 +2,7 @@
 
 飞书版 Claude Tag：把 Claude 做成飞书群里的异步队友。管理员把企业自建应用机器人拉进指定群，成员 `@` 委派任务后可以去做别的；Agent 记住群相关约定，并只使用团队选择的工具与数据。
 
-这不是 Slack 应用，也不对接官方 Claude Tag（仅 Slack、且需 Team / Enterprise）。聊天表面只做飞书（中国区 `open.feishu.cn`）。群内工作走组织持有的 **阿里云百炼（DashScope）API Key**，经 OpenAI 兼容接口调用（默认 `qwen-plus`）。个人 Claude Code / Codex / Cursor / Grok 订阅不能当作服务端。`ANTHROPIC_API_KEY` 不再是启动硬依赖。
+这不是 Slack 应用，也不对接官方 Claude Tag（仅 Slack、且需 Team / Enterprise）。聊天表面只做飞书（中国区 `open.feishu.cn`）。群内工作走组织持有的 **阿里云百炼（DashScope）API Key**，经 OpenAI 兼容接口调用（默认 `qwen3.8-max`，请求里关思考）。管理台可改模型，下一轮会话生效、不必重启 Worker。个人 Claude Code / Codex / Cursor / Grok 订阅不能当作服务端。`ANTHROPIC_API_KEY` 不再是启动硬依赖。
 
 ## 本地开发
 
@@ -23,4 +23,4 @@ pnpm dev
 
 开发环境（`pnpm --filter @agenttag/feishu-gateway dev` 会设 `NODE_ENV=development`）默认用飞书 Node SDK **长连接**收事件（`im.message.receive_v1`、进群/出群），与开放平台「使用长连接接收事件」对齐，可不配 `FEISHU_ENCRYPT_KEY`。此时 HTTP `POST /feishu/events` 不再收明文事件。生产请设 `NODE_ENV=production`，仍走加密 webhook，并配置 Encrypt Key。可用 `FEISHU_EVENT_MODE=websocket|http` 覆盖默认。
 
-必须配置 `DASHSCOPE_API_KEY`。可选 `DASHSCOPE_BASE_URL`（默认 `https://dashscope.aliyuncs.com/compatible-mode/v1`）与 `DASHSCOPE_MODEL`（默认 `qwen-plus`，可改为 `qwen-max`）。国内 npm 请自行配置 registry。
+必须配置 `DASHSCOPE_API_KEY`。可选 `DASHSCOPE_BASE_URL`（默认 `https://dashscope.aliyuncs.com/compatible-mode/v1`）与 `DASHSCOPE_MODEL`（默认 `qwen3.8-max`）。管理台「推理模型」可覆盖该默认值。国内 npm 请自行配置 registry。

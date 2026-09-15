@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { DEFAULT_DASHSCOPE_MODEL } from "@agenttag/domain";
+
+export { DEFAULT_DASHSCOPE_MODEL };
 
 const optionalUrl = z.preprocess((value) => {
   if (value === undefined || value === "") {
@@ -22,7 +25,6 @@ const emptyToUndefined = (value: unknown) => {
 };
 
 export const DEFAULT_DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-export const DEFAULT_DASHSCOPE_MODEL = "qwen-plus";
 
 export const envSchema = z.object({
   FEISHU_APP_ID: z.string().min(1),

@@ -1,10 +1,25 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+
+interface CatalogEntry {
+  id: string;
+  label: string;
+  thinking: "hybrid" | "always";
+  group: string;
+  groupLabel: string;
+}
 
 interface Snapshot {
   chats: Array<{ tenantKey: string; chatId: string; enabled: boolean; chatType: string }>;
   usage: { usedUsd: number; limitUsd: number | null };
+  model: {
+    modelId: string;
+    enableThinking: boolean;
+    source: "chat" | "tenant" | "env";
+    tenantModelId: string | null;
+    catalog: CatalogEntry[];
+  };
   memories: Array<{ id: string; chatId: string | null; kind: string; text: string }>;
 }
 
@@ -13,6 +28,8 @@ export default function AdminPage() {
   const [tenantKey, setTenantKey] = useState("default");
   const [chatId, setChatId] = useState("");
   const [limitInput, setLimitInput] = useState("");
+  const [modelId, setModelId] = useState("");
+  const [enableThinking, setEnableThinking] = useState(false);
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,11 +41,23 @@ export default function AdminPage() {
     [token],
   );
 
+  const selected = useMemo(() => {
+    const previewId = modelId || data?.model.modelId;
+    return data?.model.catalog.find((entry) => entry.id === previewId);
+  }, [data, modelId]);
+  const alwaysThinking = selected?.thinking === "always";
+
+  function applySnapshot(snapshot: Snapshot) {
+    setData(snapshot);
+    setLimitInput(snapshot.usage.limitUsd == null ? "" : String(snapshot.usage.limitUsd));
+    setModelId(snapshot.model.tenantModelId ?? "");
+    setEnableThinking(snapshot.model.enableThinking);
+    setError(null);
+  }
+
   async function load(next?: Snapshot) {
     if (next) {
-      setData(next);
-      setLimitInput(next.usage.limitUsd == null ? "" : String(next.usage.limitUsd));
-      setError(null);
+      applySnapshot(next);
       return;
     }
     const res = await fetch(`/api/chats?tenantKey=${encodeURIComponent(tenantKey)}`, { headers: headers() });
@@ -36,10 +65,7 @@ export default function AdminPage() {
       setError("无法加载，请检查 ADMIN_TOKEN。");
       return;
     }
-    const snapshot = (await res.json()) as Snapshot;
-    setData(snapshot);
-    setLimitInput(snapshot.usage.limitUsd == null ? "" : String(snapshot.usage.limitUsd));
-    setError(null);
+    applySnapshot((await res.json()) as Snapshot);
   }
 
   async function saveLimit() {
@@ -57,6 +83,24 @@ export default function AdminPage() {
     if (res.ok) {
       await load((await res.json()) as Snapshot);
     }
+  }
+
+  async function saveModel() {
+    const res = await fetch("/api/chats", {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({
+        tenantKey,
+        modelId,
+        enableThinking: alwaysThinking ? true : enableThinking,
+      }),
+    });
+    if (!res.ok) {
+      const payload = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(payload.error ?? "保存模型失败。");
+      return;
+    }
+    await load((await res.json()) as Snapshot);
   }
 
   async function addChat() {
@@ -91,6 +135,19 @@ export default function AdminPage() {
       await load((await res.json()) as Snapshot);
     }
   }
+
+  const catalogGroups = useMemo(() => {
+    const groups: Array<{ label: string; entries: CatalogEntry[] }> = [];
+    for (const entry of data?.model.catalog ?? []) {
+      const last = groups.at(-1);
+      if (!last || last.label !== entry.groupLabel) {
+        groups.push({ label: entry.groupLabel, entries: [entry] });
+      } else {
+        last.entries.push(entry);
+      }
+    }
+    return groups;
+  }, [data]);
 
   return (
     <main>
@@ -129,6 +186,56 @@ export default function AdminPage() {
             </label>
             <button type="button" onClick={() => void saveLimit()}>
               保存上限
+            </button>
+          </section>
+          <section>
+            <h2>推理模型</h2>
+            <p>
+              当前生效 <code>{data.model.modelId}</code>
+              {data.model.source === "tenant" ? "（后台）" : "（环境变量 DASHSCOPE_MODEL）"}
+              {data.model.enableThinking ? " · 思考" : ""}
+            </p>
+            <label>
+              模型
+              <select
+                value={modelId}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setModelId(next);
+                  const entry = data.model.catalog.find((item) => item.id === next);
+                  if (entry?.thinking === "always") {
+                    setEnableThinking(true);
+                  }
+                }}
+              >
+                <option value="">跟随环境变量 DASHSCOPE_MODEL</option>
+                {catalogGroups.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.entries.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.id} — {entry.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={alwaysThinking ? true : enableThinking}
+                disabled={alwaysThinking}
+                onChange={(event) => setEnableThinking(event.target.checked)}
+              />
+              深度思考
+            </label>
+            <p>
+              {alwaysThinking
+                ? "该模型始终思考，不能关闭。"
+                : "开启后简单问候也会变慢、更贵。飞书日常对话建议关闭。"}
+            </p>
+            <button type="button" onClick={() => void saveModel()}>
+              保存模型
             </button>
           </section>
           <section>

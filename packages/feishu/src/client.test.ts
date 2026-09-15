@@ -32,6 +32,38 @@ describe("progressCard", () => {
     expect(card.schema).toBe("2.0");
     expect(card.config.update_multi).toBe(true);
   });
+
+  it("keeps the header title as status and puts the model id on subtitle plus a body footer", () => {
+    const card = progressCard({
+      title: "处理完成",
+      statusText: "已完成",
+      checklist: [{ id: "1", label: "读取群历史", status: "done" }],
+      markdown: "结论：两件未关闭事项。",
+      modelId: "qwen3.8-max",
+      enableThinking: false,
+    });
+    expect(card.header.title.content).toBe("处理完成");
+    expect(card.header.subtitle).toEqual({ tag: "plain_text", content: "qwen3.8-max" });
+    const body = card.body.elements[0]?.content ?? "";
+    expect(body).toContain("结论：两件未关闭事项。");
+    expect(body.trim().endsWith("模型：`qwen3.8-max`")).toBe(true);
+    expect(body).not.toContain("Claude");
+  });
+
+  it("marks thinking on the subtitle without pasting reasoning onto the card", () => {
+    const card = progressCard({
+      title: "正在处理",
+      statusText: "进行中",
+      checklist: [{ id: "1", label: "读取群历史", status: "doing" }],
+      markdown: "正在调用工具。",
+      modelId: "ZHIPU/GLM-5.3",
+      enableThinking: true,
+    });
+    expect(card.header.title.content).toBe("正在处理");
+    expect(card.header.subtitle).toEqual({ tag: "plain_text", content: "ZHIPU/GLM-5.3 · 思考" });
+    expect(card.body.elements[0]?.content).toContain("模型：`ZHIPU/GLM-5.3`");
+    expect(card.body.elements[0]?.content).not.toContain("reasoning");
+  });
 });
 
 describe("replyInThread", () => {

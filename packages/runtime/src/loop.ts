@@ -2,6 +2,7 @@ import type { AgentTurnResult, TranscriptEvent } from "@agenttag/domain";
 
 export type LlmContent =
   | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_use_id: string; content: string };
 
@@ -22,6 +23,7 @@ export interface LlmClient {
     system: string;
     messages: LlmMessage[];
     tools: unknown[];
+    enableThinking?: boolean;
   }): Promise<LlmResponse>;
 }
 
@@ -37,6 +39,7 @@ export interface RunAgentLoopInput {
   onUsage?: (usage: { input_tokens: number; output_tokens: number }) => Promise<void>;
   onToolError?: (error: { name: string; message: string }) => Promise<void>;
   maxTurns?: number;
+  enableThinking?: boolean;
 }
 
 export function reduceToolResult(prev: AgentTurnResult, event: TranscriptEvent): AgentTurnResult {
@@ -68,6 +71,7 @@ export async function runAgentLoop(input: RunAgentLoopInput): Promise<AgentTurnR
       system: input.system,
       messages,
       tools: input.toolDefs ?? defaultToolDefs(Object.keys(input.tools)),
+      enableThinking: input.enableThinking,
     });
     await input.onUsage?.(response.usage);
 

@@ -139,5 +139,13 @@ export function createGatewayStore(db: Db) {
       const usedUsd = tokensToUsd(Number(usageRows[0]?.input ?? 0), Number(usageRows[0]?.output ?? 0));
       return { usedUsd, limitUsd: limitUsd != null && Number.isFinite(limitUsd) ? limitUsd : null };
     },
+
+    async getTenantModelConfig(tenantKey: string) {
+      const tenantRows = await db.select().from(tenants).where(eq(tenants.tenantKey, tenantKey)).limit(1);
+      return {
+        modelId: tenantRows[0]?.modelId ?? null,
+        enableThinking: tenantRows[0]?.enableThinking ?? false,
+      };
+    },
   };
 }

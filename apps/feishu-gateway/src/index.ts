@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseEnv, requireEncryptKeyIfHttp, resolveFeishuEventMode } from "@agenttag/config";
 import { createDb } from "@agenttag/db";
+import { resolveRuntimeModel } from "@agenttag/domain";
 import { createFeishuClient } from "@agenttag/feishu";
 import { serve } from "@hono/node-server";
 import { Queue } from "bullmq";
@@ -144,6 +145,14 @@ export async function startGateway() {
         await handleBotAdded(parsed, {
           getChat: (chatId) => feishu.getChat(chatId),
           lookupGrant: (tenantKey, chatId) => store.lookupGrant(tenantKey, chatId),
+          getRuntimeModel: async (tenantKey) => {
+            const row = await store.getTenantModelConfig(tenantKey);
+            return resolveRuntimeModel({
+              tenantModelId: row.modelId,
+              tenantEnableThinking: row.enableThinking,
+              envModelId: env.DASHSCOPE_MODEL,
+            });
+          },
           sendText: async (chatId, text) => {
             await feishu.sendText(chatId, text);
           },
@@ -193,6 +202,14 @@ export async function startGateway() {
         },
         newId: () => ulid(),
         getBudget: (tenantKey) => store.getBudget(tenantKey),
+        getRuntimeModel: async (tenantKey) => {
+          const row = await store.getTenantModelConfig(tenantKey);
+          return resolveRuntimeModel({
+            tenantModelId: row.modelId,
+            tenantEnableThinking: row.enableThinking,
+            envModelId: env.DASHSCOPE_MODEL,
+          });
+        },
         releaseEvent: (eventId) => releaseEvent(redis, eventId),
         loadProgress: (eventId) => loadEventProgress(redis, eventId),
         saveProgress: (eventId, patch) => saveEventProgress(redis, eventId, patch),

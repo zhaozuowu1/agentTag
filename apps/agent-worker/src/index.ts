@@ -1,6 +1,6 @@
 import { parseEnv } from "@agenttag/config";
 import { auditEvents, createDb, tenants, usageEvents, workingSessions } from "@agenttag/db";
-import { tokensToUsd } from "@agenttag/domain";
+import { resolveRuntimeModel, tokensToUsd } from "@agenttag/domain";
 import { createFeishuClient } from "@agenttag/feishu";
 import { createFeishuMessageTools, createMemoryTools, createOpenAiCompatLlm, memoryPromptBlock } from "@agenttag/runtime";
 import { createDbMemoryStore } from "@agenttag/memory";
@@ -48,11 +48,18 @@ export async function startWorker() {
         chatType: chat.chatType,
         sessionId: row.id,
       });
+      const tenantRows = await db.select().from(tenants).where(eq(tenants.tenantKey, row.tenantKey)).limit(1);
+      const runtime = resolveRuntimeModel({
+        tenantModelId: tenantRows[0]?.modelId,
+        tenantEnableThinking: tenantRows[0]?.enableThinking,
+        envModelId: env.DASHSCOPE_MODEL,
+      });
       await processSessionJob(
         { sessionId },
         {
           llm,
-          model: env.DASHSCOPE_MODEL,
+          model: runtime.modelId,
+          enableThinking: runtime.enableThinking,
           loadSession: async (id) => {
             const latest = await db.select().from(workingSessions).where(eq(workingSessions.id, id)).limit(1);
             return (latest[0] as unknown as WorkerSession | undefined) ?? null;
@@ -67,6 +74,7 @@ export async function startWorker() {
               openId: usage.openId,
               inputTokens: usage.inputTokens,
               outputTokens: usage.outputTokens,
+              modelId: runtime.modelId,
             });
           },
           recordAudit: async (audit) => {

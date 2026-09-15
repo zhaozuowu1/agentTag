@@ -20,7 +20,7 @@ describe("parseEnv", () => {
     expect(env.FEISHU_ENCRYPT_KEY).toBe("encrypt");
     expect(env.DASHSCOPE_API_KEY).toBe("sk-dashscope-test");
     expect(env.DASHSCOPE_BASE_URL).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
-    expect(env.DASHSCOPE_MODEL).toBe("qwen-plus");
+    expect(env.DASHSCOPE_MODEL).toBe("qwen3.8-max");
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(env.ADMIN_TOKEN).toBe("admin-token");
@@ -42,7 +42,7 @@ describe("parseEnv", () => {
       DASHSCOPE_MODEL: "",
       DASHSCOPE_BASE_URL: "",
     });
-    expect(env.DASHSCOPE_MODEL).toBe("qwen-plus");
+    expect(env.DASHSCOPE_MODEL).toBe("qwen3.8-max");
     expect(env.DASHSCOPE_BASE_URL).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
   });
 
