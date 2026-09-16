@@ -1,6 +1,11 @@
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDockerSandbox, type Sandbox } from "./runner.ts";
+
+const sandboxRoot = fileURLToPath(new URL("..", import.meta.url));
 
 const PLOT_PY = `
 import csv, pathlib, struct, zlib
@@ -30,6 +35,43 @@ for i, v in enumerate(vals):
 pathlib.Path("chart.png").write_bytes(png(width, height, img))
 `;
 
+const CJK_TITLE_PY = `
+import json
+import sys
+from pathlib import Path
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties, findfont
+from matplotlib.ft2font import FT2Font
+from matplotlib.textpath import TextPath
+
+TITLE = "2026 月度营收"
+CJK = "月度营收"
+fp = FontProperties()
+path = findfont(fp)
+font = FT2Font(path)
+missing = [ch for ch in CJK if font.get_char_index(ord(ch)) == 0]
+tp = TextPath((0, 0), "月", size=40, prop=fp)
+
+fig, ax = plt.subplots(figsize=(6, 3))
+ax.bar(["1月", "2月", "3月"], [10, 25, 15])
+ax.set_title(TITLE)
+fig.savefig("chart.png", dpi=120)
+plt.close(fig)
+
+payload = {
+    "font": path,
+    "missing": missing,
+    "month_vertices": int(len(tp.vertices)),
+    "png_bytes": Path("chart.png").stat().st_size,
+}
+print("CJK_REPORT:" + json.dumps(payload, ensure_ascii=False))
+if missing or len(tp.vertices) < 20:
+    sys.exit(1)
+`;
+
 function dockerDaemonUp(): boolean {
   try {
     execFileSync("docker", ["info"], { stdio: "ignore" });
@@ -40,6 +82,20 @@ function dockerDaemonUp(): boolean {
 }
 
 const describeDocker = dockerDaemonUp() ? describe : describe.skip;
+
+describe("sandbox CJK matplotlib config", () => {
+  it("installs Noto Sans CJK in the image and prefers it for matplotlib titles", () => {
+    const dockerfile = readFileSync(join(sandboxRoot, "Dockerfile.sandbox"), "utf8");
+    const rcPath = join(sandboxRoot, "mpl", "matplotlibrc");
+    expect(dockerfile).toMatch(/fonts-noto-cjk/);
+    expect(dockerfile).toMatch(/MATPLOTLIBRC=/);
+    expect(dockerfile).toMatch(/COPY\s+\S*matplotlibrc/);
+    expect(existsSync(rcPath)).toBe(true);
+    const rc = readFileSync(rcPath, "utf8");
+    expect(rc).toMatch(/Noto Sans CJK SC/);
+    expect(rc).toMatch(/axes\.unicode_minus\s*:\s*False/);
+  });
+});
 
 describeDocker("sandbox csv chart", () => {
   const boxes: Sandbox[] = [];
@@ -60,4 +116,44 @@ describeDocker("sandbox csv chart", () => {
     const png = await sandbox.readFileBytes("chart.png");
     expect(Array.from(png.slice(0, 8))).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   });
+
+  it(
+    "renders a Chinese matplotlib title with CJK glyphs under --network none",
+    async () => {
+      const image = "agenttag-sandbox:cjk-test";
+      execFileSync("docker", ["build", "-f", "Dockerfile.sandbox", "-t", image, "."], {
+        cwd: sandboxRoot,
+        encoding: "utf8",
+        timeout: 10 * 60 * 1000,
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      const sandbox = await createDockerSandbox({
+        sessionId: "sess_cjk_title",
+        image,
+      });
+      boxes.push(sandbox);
+
+      const inspect = JSON.parse(execFileSync("docker", ["inspect", sandbox.id], { encoding: "utf8" })) as Array<{
+        HostConfig?: { NetworkMode?: string };
+      }>;
+      expect(inspect[0]?.HostConfig?.NetworkMode).toBe("none");
+
+      await sandbox.writeFile("plot_cjk.py", CJK_TITLE_PY);
+      const ran = await sandbox.exec("python3 plot_cjk.py");
+      expect(ran.code, `${ran.stdout}\n${ran.stderr}`).toBe(0);
+      const line = ran.stdout.split("\n").find((row) => row.startsWith("CJK_REPORT:"));
+      expect(line).toBeTruthy();
+      const report = JSON.parse((line ?? "").slice("CJK_REPORT:".length)) as {
+        font?: string;
+        missing?: string[];
+        month_vertices?: number;
+      };
+      expect(report.missing).toEqual([]);
+      expect(report.month_vertices ?? 0).toBeGreaterThan(20);
+      expect(report.font ?? "").toMatch(/Noto/i);
+      const png = await sandbox.readFileBytes("chart.png");
+      expect(Array.from(png.slice(0, 8))).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    },
+    600_000,
+  );
 });

@@ -1,0 +1,4 @@
+# Prefer a CJK-capable sans font so titles like 「2026 月度营收」 render.
+font.family: sans-serif
+font.sans-serif: Noto Sans CJK SC, Noto Sans SC, Noto Sans CJK JP, Noto Sans CJK TC, Noto Sans CJK HK, Noto Sans CJK KR, DejaVu Sans
+axes.unicode_minus: False
