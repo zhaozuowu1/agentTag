@@ -1,4 +1,8 @@
 import { execFile } from "node:child_process";
+import http from "node:http";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -82,6 +86,61 @@ describe("createDockerSandbox", () => {
     expect(SANDBOX_WALL_MS).toBe(10 * 60 * 1000);
   });
 
+  it("defaults to --network none so unset HTTP_PROXY or raw sockets cannot egress", async () => {
+    const hits: string[] = [];
+    const upstream = http.createServer((req, res) => {
+      hits.push(`${req.method} ${req.url}`);
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("leaked");
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, "0.0.0.0", resolve));
+    const addr = upstream.address();
+    if (!addr || typeof addr === "string") {
+      upstream.close();
+      throw new Error("upstream address missing");
+    }
+    const closeUpstream = () =>
+      new Promise<void>((resolve, reject) => {
+        upstream.close((err) => (err ? reject(err) : resolve()));
+      });
+
+    try {
+      const sandbox = await createDockerSandbox({
+        sessionId: "sess_nonet_1",
+        image: "alpine:3.20",
+        httpProxyUrl: "http://host.docker.internal:18080",
+      });
+      boxes.push(sandbox);
+
+      const inspect = (await dockerJson(["inspect", sandbox.id])) as Array<{
+        HostConfig?: { NetworkMode?: string; ExtraHosts?: string[] | null };
+      }>;
+      expect(inspect[0]?.HostConfig?.NetworkMode).toBe("none");
+
+      const proxyEnv = await sandbox.exec("printenv HTTP_PROXY HTTPS_PROXY http_proxy https_proxy || true");
+      expect(proxyEnv.stdout.trim()).toBe("");
+
+      const publicHit = await sandbox.exec("wget -qO- -T 2 http://1.1.1.1/");
+      expect(publicHit.code).not.toBe(0);
+
+      const hostHit = await sandbox.exec(`wget -qO- -T 2 http://172.17.0.1:${addr.port}/secret`);
+      expect(hostHit.code).not.toBe(0);
+
+      const unsetProxy = await sandbox.exec(
+        `env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy wget -qO- -T 2 http://172.17.0.1:${addr.port}/bypass`,
+      );
+      expect(unsetProxy.code).not.toBe(0);
+
+      const viaProxy = await sandbox.exec(
+        `wget -qO- -T 2 -Y on -P /tmp http://host.docker.internal:18080/ 2>/dev/null; wget -qO- -T 2 http://172.17.0.1:${addr.port}/via-proxy`,
+      );
+      expect(viaProxy.code).not.toBe(0);
+      expect(hits).toEqual([]);
+    } finally {
+      await closeUpstream();
+    }
+  });
+
   it("does not copy host credentials into the container environment", async () => {
     const sandbox = await createDockerSandbox({
       sessionId: "sess_nosecret_1",
@@ -122,6 +181,55 @@ describe("createDockerSandbox", () => {
     await expect(sandbox.writeFile("../../etc/evil", "nope")).rejects.toThrow(/越界|workspace/i);
   });
 
+  it("does not follow workDir symlinks that escape the sandbox on read or write", async () => {
+    const victimDir = await mkdtemp(join(tmpdir(), "agenttag-outside-"));
+    const victimFile = join(victimDir, "secret.txt");
+    await writeFile(victimFile, "original-outside", "utf8");
+
+    try {
+      const sandbox = await createDockerSandbox({
+        sessionId: "sess_symlink_jail_1",
+        image: "alpine:3.20",
+      });
+      boxes.push(sandbox);
+
+      await sandbox.writeFile("ok.txt", "inside");
+      expect(await sandbox.readFile("ok.txt")).toBe("inside");
+
+      const absLink = await sandbox.exec("ln -s /etc/passwd abs-leak");
+      expect(absLink.code).toBe(0);
+      const relLink = await sandbox.exec("ln -s ../../../etc/passwd rel-leak");
+      expect(relLink.code).toBe(0);
+      const fileLink = await sandbox.exec(`ln -s '${victimFile}' file-leak`);
+      expect(fileLink.code).toBe(0);
+      const dirLink = await sandbox.exec(`ln -s '${victimDir}' nested`);
+      expect(dirLink.code).toBe(0);
+
+      await expect(sandbox.readFile("abs-leak")).rejects.toThrow(/越界|workspace/i);
+      await expect(sandbox.readFile("rel-leak")).rejects.toThrow(/越界|workspace/i);
+      await expect(sandbox.readFile("file-leak")).rejects.toThrow(/越界|workspace/i);
+      await expect(sandbox.readFileBytes("file-leak")).rejects.toThrow(/越界|workspace/i);
+
+      await expect(sandbox.writeFile("file-leak", "pwned")).rejects.toThrow(/越界|workspace/i);
+      await expect(sandbox.writeFileBytes("file-leak", new TextEncoder().encode("pwned"))).rejects.toThrow(
+        /越界|workspace/i,
+      );
+      await expect(sandbox.writeFile("nested/pwned.txt", "pwned")).rejects.toThrow(/越界|workspace/i);
+
+      expect(await readFile(victimFile, "utf8")).toBe("original-outside");
+      await expect(readFile(join(victimDir, "pwned.txt"), "utf8")).rejects.toThrow(/ENOENT/);
+
+      await sandbox.writeFile("dir/sub/ok.txt", "nested-ok");
+      expect(await sandbox.readFile("dir/sub/ok.txt")).toBe("nested-ok");
+      await sandbox.writeFile("real.txt", "inside-real");
+      const alias = await sandbox.exec("ln -s real.txt alias.txt");
+      expect(alias.code).toBe(0);
+      expect(await sandbox.readFile("alias.txt")).toBe("inside-real");
+    } finally {
+      await rm(victimDir, { recursive: true, force: true });
+    }
+  });
+
   it("destroy removes the container and the host workspace so a later exec fails", async () => {
     const sandbox = await createDockerSandbox({
       sessionId: "sess_destroy_1",
@@ -137,8 +245,48 @@ describe("createDockerSandbox", () => {
 });
 
 describe("resolveSandboxImage", () => {
-  it("falls back to python:3.12-slim when the matplotlib image is not built", async () => {
-    const image = await resolveSandboxImage("agenttag-sandbox:does-not-exist");
+  it("returns a locally available image without pulling", async () => {
+    const image = await resolveSandboxImage("python:3.12-slim");
     expect(image).toBe("python:3.12-slim");
+  });
+
+  it("pulls the preferred image when it is missing locally", async () => {
+    const calls: string[][] = [];
+    const dockerExec = async (_command: string, args: readonly string[]) => {
+      calls.push([...args]);
+      if (args[0] === "image" && args[1] === "inspect") {
+        throw new Error("missing locally");
+      }
+      if (args[0] === "pull" && args[1] === "python:3.12-slim") {
+        return { stdout: "pulled\n", stderr: "" };
+      }
+      throw new Error(`unexpected docker ${args.join(" ")}`);
+    };
+
+    const image = await resolveSandboxImage("python:3.12-slim", dockerExec);
+    expect(image).toBe("python:3.12-slim");
+    expect(calls).toEqual([
+      ["image", "inspect", "python:3.12-slim"],
+      ["pull", "python:3.12-slim"],
+    ]);
+  });
+
+  it("falls back to pulling python:3.12-slim when preferred images are absent", async () => {
+    const pulled: string[] = [];
+    const dockerExec = async (_command: string, args: readonly string[]) => {
+      if (args[0] === "pull") {
+        pulled.push(args[1] ?? "");
+        if (args[1] === "python:3.12-slim") {
+          return { stdout: "pulled\n", stderr: "" };
+        }
+        throw new Error("not on registry");
+      }
+      throw new Error("missing locally");
+    };
+
+    const image = await resolveSandboxImage("agenttag-sandbox:does-not-exist", dockerExec);
+    expect(image).toBe("python:3.12-slim");
+    expect(pulled).toContain("agenttag-sandbox:does-not-exist");
+    expect(pulled.at(-1)).toBe("python:3.12-slim");
   });
 });

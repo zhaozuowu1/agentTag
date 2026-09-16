@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,13 +36,20 @@ export interface CreateDockerSandboxOptions {
   extraHosts?: string[];
 }
 
+export type DockerExec = (
+  command: string,
+  args: readonly string[],
+  options?: { encoding?: BufferEncoding; timeout?: number; maxBuffer?: number },
+) => Promise<{ stdout: string; stderr?: string }>;
+
 export async function createDockerSandbox(opts: CreateDockerSandboxOptions): Promise<Sandbox> {
   const workDir = await mkdtemp(join(tmpdir(), "agenttag-sandbox-"));
   await chmod(workDir, 0o777);
   const name = sandboxName(opts.sessionId);
   const image = opts.image?.trim() || DEFAULT_SANDBOX_IMAGE;
+  const network = opts.network?.trim() || "none";
   const env = filteredEnv({
-    ...(opts.httpProxyUrl
+    ...(opts.httpProxyUrl && network !== "none"
       ? {
           HTTP_PROXY: opts.httpProxyUrl,
           HTTPS_PROXY: opts.httpProxyUrl,
@@ -78,11 +86,11 @@ export async function createDockerSandbox(opts: CreateDockerSandboxOptions): Pro
     "1000:1000",
     "--label",
     `agenttag.session=${opts.sessionId}`,
-    "--add-host",
-    "host.docker.internal:host-gateway",
+    "--network",
+    network,
   ];
-  if (opts.network) {
-    args.push("--network", opts.network);
+  if (network !== "none") {
+    args.push("--add-host", "host.docker.internal:host-gateway");
   }
   for (const host of opts.extraHosts ?? []) {
     args.push("--add-host", host);
@@ -147,37 +155,44 @@ export async function createDockerSandbox(opts: CreateDockerSandboxOptions): Pro
     },
     async readFile(path) {
       assertAlive();
-      return readFile(hostPath(workDir, path), "utf8");
+      const dest = await jailedRealPath(workDir, path);
+      return readFile(dest, "utf8");
     },
     async writeFile(path, content) {
       assertAlive();
-      const dest = hostPath(workDir, path);
-      await mkdir(dirname(dest), { recursive: true });
-      await writeFile(dest, content, "utf8");
+      await writeJailedFile(workDir, path, content);
     },
     async readFileBytes(path) {
       assertAlive();
-      const buf = await readFile(hostPath(workDir, path));
+      const dest = await jailedRealPath(workDir, path);
+      const buf = await readFile(dest);
       return new Uint8Array(buf);
     },
     async writeFileBytes(path, content) {
       assertAlive();
-      const dest = hostPath(workDir, path);
-      await mkdir(dirname(dest), { recursive: true });
-      await writeFile(dest, content);
+      await writeJailedFile(workDir, path, content);
     },
     destroy,
   };
 }
 
-export async function resolveSandboxImage(preferred?: string): Promise<string> {
+export async function resolveSandboxImage(preferred?: string, dockerExec: DockerExec = defaultDockerExec): Promise<string> {
   const candidates = [...new Set([preferred?.trim(), DEFAULT_SANDBOX_IMAGE, "python:3.12-slim"].filter((value): value is string => Boolean(value)))];
   for (const image of candidates) {
     try {
-      await execFileAsync("docker", ["image", "inspect", image], { encoding: "utf8" });
+      await dockerExec("docker", ["image", "inspect", image], { encoding: "utf8" });
       return image;
     } catch {
-      continue;
+      try {
+        await dockerExec("docker", ["pull", image], {
+          encoding: "utf8",
+          timeout: 10 * 60 * 1000,
+          maxBuffer: 16 * 1024 * 1024,
+        });
+        return image;
+      } catch {
+        continue;
+      }
     }
   }
   throw new Error("找不到可用的沙箱镜像");
@@ -234,10 +249,131 @@ function hostPath(workDir: string, rel: string): string {
   const relative = containerPath === WORKSPACE ? "" : containerPath.slice(WORKSPACE.length + 1);
   const dest = relative ? resolve(workDir, relative) : workDir;
   const root = resolve(workDir);
-  if (dest !== root && !dest.startsWith(`${root}/`)) {
-    throw new Error("路径越界：只能访问沙箱 workspace");
-  }
+  assertInside(root, dest);
   return dest;
+}
+
+async function defaultDockerExec(
+  command: string,
+  args: readonly string[],
+  options?: { encoding?: BufferEncoding; timeout?: number; maxBuffer?: number },
+): Promise<{ stdout: string; stderr?: string }> {
+  return execFileAsync(command, [...args], { encoding: "utf8", ...options });
+}
+
+function jailError(): Error {
+  return new Error("路径越界：只能访问沙箱 workspace");
+}
+
+function isJailError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("路径越界");
+}
+
+function isErrno(error: unknown, code: string): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === code);
+}
+
+function assertInside(root: string, candidate: string): void {
+  if (candidate !== root && !candidate.startsWith(`${root}/`)) {
+    throw jailError();
+  }
+}
+
+async function walkAndAssertInside(workDir: string, lexical: string): Promise<void> {
+  const rootReal = await realpath(workDir);
+  const rootLex = resolve(workDir);
+  assertInside(rootLex, lexical);
+  const rel = lexical === rootLex ? "" : lexical.slice(rootLex.length + 1);
+  const parts = rel.split("/").filter(Boolean);
+  let current = rootLex;
+  for (const part of parts) {
+    current = join(current, part);
+    try {
+      await lstat(current);
+    } catch (error) {
+      if (isErrno(error, "ENOENT")) {
+        return;
+      }
+      throw error;
+    }
+    let target: string;
+    try {
+      target = await realpath(current);
+    } catch {
+      throw jailError();
+    }
+    assertInside(rootReal, target);
+  }
+}
+
+async function jailedRealPath(workDir: string, rel: string): Promise<string> {
+  const lexical = hostPath(workDir, rel);
+  await walkAndAssertInside(workDir, lexical);
+  const real = await realpath(lexical);
+  assertInside(await realpath(workDir), real);
+  return real;
+}
+
+async function mkdirParentsNoFollow(workDir: string, dest: string): Promise<void> {
+  const rootLex = resolve(workDir);
+  const rootReal = await realpath(workDir);
+  const dir = dirname(dest);
+  if (dir !== rootLex && !dir.startsWith(`${rootLex}/`)) {
+    throw jailError();
+  }
+  const rel = dir === rootLex ? "" : dir.slice(rootLex.length + 1);
+  const parts = rel.split("/").filter(Boolean);
+  let current = rootLex;
+  for (const part of parts) {
+    current = join(current, part);
+    try {
+      await lstat(current);
+      let target: string;
+      try {
+        target = await realpath(current);
+      } catch {
+        throw jailError();
+      }
+      assertInside(rootReal, target);
+      const targetSt = await lstat(target);
+      if (!targetSt.isDirectory()) {
+        throw jailError();
+      }
+    } catch (error) {
+      if (isJailError(error)) {
+        throw error;
+      }
+      if (!isErrno(error, "ENOENT")) {
+        throw error;
+      }
+      await mkdir(current);
+    }
+  }
+}
+
+async function writeJailedFile(workDir: string, rel: string, content: string | Uint8Array): Promise<void> {
+  const lexical = hostPath(workDir, rel);
+  await walkAndAssertInside(workDir, lexical);
+  await mkdirParentsNoFollow(workDir, lexical);
+  const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW;
+  let fh;
+  try {
+    fh = await open(lexical, flags, 0o666);
+  } catch (error) {
+    if (isErrno(error, "ELOOP") || isErrno(error, "EPERM")) {
+      throw jailError();
+    }
+    throw error;
+  }
+  try {
+    if (typeof content === "string") {
+      await fh.writeFile(content, "utf8");
+    } else {
+      await fh.writeFile(content);
+    }
+  } finally {
+    await fh.close();
+  }
 }
 
 function resolveContainerCwd(cwd?: string): string {
