@@ -1,3 +1,4 @@
+import { parseFileContent } from "@agenttag/feishu";
 import type { ReceiveMessageEvent } from "./handlers/message-receive.ts";
 
 interface FeishuHeader {
@@ -16,6 +17,7 @@ export function parseReceiveMessage(payload: {
       thread_id?: string;
       root_id?: string;
       parent_id?: string;
+      message_type?: string;
       content?: string;
       mentions?: Array<{ id?: string | { open_id?: string } }>;
     };
@@ -27,6 +29,7 @@ export function parseReceiveMessage(payload: {
   if (!header?.event_id || !header.tenant_key || !message?.message_id || !message.chat_id || !openId) {
     return null;
   }
+  const file = parseFileContent(message.content);
   return {
     eventId: header.event_id,
     tenantKey: header.tenant_key,
@@ -37,6 +40,9 @@ export function parseReceiveMessage(payload: {
     openId,
     text: extractText(message.content),
     mentionOpenIds: (message.mentions ?? []).map(mentionOpenId).filter((id): id is string => Boolean(id)),
+    messageType: message.message_type ?? (file.fileKey ? "file" : "text"),
+    fileKey: file.fileKey,
+    fileName: file.fileName,
   };
 }
 

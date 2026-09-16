@@ -1,4 +1,11 @@
-import { progressCard, FeishuApiError } from "@agenttag/feishu";
+import {
+  attachmentFromEvent,
+  composeUserTextWithAttachments,
+  FeishuApiError,
+  pickRecentChatAttachments,
+  progressCard,
+  type FeishuMessage,
+} from "@agenttag/feishu";
 import {
   botAddedText,
   canStartSession,
@@ -20,6 +27,9 @@ export interface ReceiveMessageEvent {
   openId: string;
   text: string;
   mentionOpenIds: string[];
+  messageType?: string | null;
+  fileKey?: string | null;
+  fileName?: string | null;
 }
 
 export interface RuntimeModelSnapshot {
@@ -58,6 +68,7 @@ export interface MessageReceiveDeps {
   sendText(chatId: string, text: string): Promise<void>;
   sendCard(chatId: string, card: unknown): Promise<{ messageId: string }>;
   appendUserMessage(sessionId: string, openId: string, text: string): Promise<void>;
+  listChatMessages(chatId: string): Promise<FeishuMessage[]>;
   enqueue(job: { sessionId: string }): Promise<void>;
   newId: () => string;
   getBudget(tenantKey: string): Promise<{ usedUsd: number; limitUsd: number | null }>;
@@ -172,7 +183,8 @@ async function handleClaimedMessage(
       return;
     }
     if (!progress.appended) {
-      await deps.appendUserMessage(decision.sessionId, decision.openId, decision.text);
+      const steerText = composeUserTextWithAttachments(decision.text, boundEventAttachments(event));
+      await deps.appendUserMessage(decision.sessionId, decision.openId, steerText);
       progress = await persistProgress(event.eventId, deps, { appended: true, sessionId: decision.sessionId });
     }
     await retryOp(deps, () => deps.enqueue({ sessionId: decision.sessionId }));
@@ -197,8 +209,11 @@ async function handleClaimedMessage(
     return;
   }
 
-  const userText =
-    decision.type === "start_task" ? decision.text : normalizeUserText(event.text);
+  const userText = await resolveStartUserText(
+    event,
+    decision.type === "start_task" ? decision.text : normalizeUserText(event.text),
+    deps,
+  );
   const card = progressCard({
     title: "收到，正在处理",
     statusText: "已排队，我会在话题里更新进度。",
@@ -242,4 +257,32 @@ async function handleClaimedMessage(
   );
   progress = await persistProgress(event.eventId, deps, { created: true });
   await retryOp(deps, () => deps.enqueue({ sessionId }));
+}
+
+function boundEventAttachments(event: ReceiveMessageEvent) {
+  const own = attachmentFromEvent({
+    messageId: event.messageId,
+    messageType: event.messageType,
+    fileKey: event.fileKey,
+    fileName: event.fileName,
+    text: event.text,
+  });
+  return own ? [own] : [];
+}
+
+async function resolveStartUserText(
+  event: ReceiveMessageEvent,
+  userText: string,
+  deps: MessageReceiveDeps,
+): Promise<string> {
+  const own = boundEventAttachments(event);
+  if (own.length > 0) {
+    return composeUserTextWithAttachments(userText, own);
+  }
+  const recent = await retryOp(deps, () => deps.listChatMessages(event.chatId));
+  const picked = pickRecentChatAttachments(recent, {
+    excludeMessageId: event.messageId,
+    preferSenderOpenId: event.openId,
+  });
+  return composeUserTextWithAttachments(userText, picked);
 }

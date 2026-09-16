@@ -107,6 +107,114 @@ describe("createFeishuFileTools", () => {
     expect(result).toMatch(/不属于|当前群|当前话题/);
   });
 
+  it("fetches a group CSV when the model passes file_key instead of messageId", async () => {
+    const files = new Map<string, Uint8Array>();
+    const csv = "month,revenue,orders\n1,10,2\n";
+    const chatCsv: FeishuMessage = {
+      messageId: "om_csv",
+      chatId: "oc_auth",
+      threadId: null,
+      parentId: null,
+      rootId: null,
+      messageType: "file",
+      text: "",
+      senderOpenId: "ou_user",
+      createTime: String(Date.now() - 5_000),
+      mentions: [],
+      fileKey: "file_csv_1",
+      fileName: "sandbox-demo-sales.csv",
+      imageKey: null,
+    };
+    const tools = createFeishuFileTools({
+      client: client({
+        listMessages: async (opts) => (opts.container === "chat" ? [chatCsv] : []),
+        downloadMessageResource: async (messageId, fileKey, type) => {
+          expect(messageId).toBe("om_csv");
+          expect(fileKey).toBe("file_csv_1");
+          expect(type).toBe("file");
+          return new TextEncoder().encode(csv);
+        },
+      }),
+      sandbox: memorySandbox(files),
+      replyToMessageId: "om_card",
+      chatId: "oc_auth",
+      threadId: "omt_new",
+    });
+    const result = await tools.feishu_fetch_file({ messageId: "file_csv_1", destPath: "sales.csv" });
+    expect(result).toContain("sandbox-demo-sales.csv");
+    expect(new TextDecoder().decode(files.get("sales.csv"))).toBe(csv);
+  });
+
+  it("refuses a file_key that is not in the current chat or thread", async () => {
+    const tools = createFeishuFileTools({
+      client: client({
+        listMessages: async () => [
+          {
+            messageId: "om_csv",
+            chatId: "oc_auth",
+            threadId: null,
+            parentId: null,
+            rootId: null,
+            messageType: "file",
+            text: "",
+            senderOpenId: "ou_user",
+            createTime: String(Date.now() - 5_000),
+            mentions: [],
+            fileKey: "file_csv_1",
+            fileName: "sales.csv",
+            imageKey: null,
+          } satisfies FeishuMessage,
+        ],
+      }),
+      sandbox: memorySandbox(),
+      replyToMessageId: "om_card",
+      chatId: "oc_auth",
+      threadId: "omt_1",
+    });
+    const result = await tools.feishu_fetch_file({ messageId: "file_foreign", destPath: "x.csv" });
+    expect(result).toMatch(/不属于|当前群|当前话题/);
+  });
+
+  it("downloads the newest group CSV when messageId is omitted", async () => {
+    const files = new Map<string, Uint8Array>();
+    const csv = "month,revenue\n1,10\n";
+    const tools = createFeishuFileTools({
+      client: client({
+        listMessages: async (opts) =>
+          opts.container === "chat"
+            ? [
+                {
+                  messageId: "om_csv",
+                  chatId: "oc_auth",
+                  threadId: null,
+                  parentId: null,
+                  rootId: null,
+                  messageType: "file",
+                  text: "",
+                  senderOpenId: "ou_user",
+                  createTime: String(Date.now() - 5_000),
+                  mentions: [],
+                  fileKey: "file_csv_1",
+                  fileName: "sales.csv",
+                  imageKey: null,
+                } satisfies FeishuMessage,
+              ]
+            : [],
+        downloadMessageResource: async (messageId) => {
+          expect(messageId).toBe("om_csv");
+          return new TextEncoder().encode(csv);
+        },
+      }),
+      sandbox: memorySandbox(files),
+      replyToMessageId: "om_card",
+      chatId: "oc_auth",
+      threadId: "omt_new",
+    });
+    const result = await tools.feishu_fetch_file({ destPath: "sales.csv" });
+    expect(result).toContain("sales.csv");
+    expect(new TextDecoder().decode(files.get("sales.csv"))).toBe(csv);
+  });
+
   it("posts a sandbox png back into the Feishu thread", async () => {
     const files = new Map<string, Uint8Array>([["chart.png", PNG]]);
     const uploads: string[] = [];

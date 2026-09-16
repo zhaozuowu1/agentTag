@@ -8,3 +8,15 @@ export type {
   FeishuMessage,
 } from "./types.ts";
 export { FeishuApiError } from "./types.ts";
+export {
+  RECENT_ATTACHMENT_MAX_AGE_MS,
+  attachmentFromEvent,
+  composeUserTextWithAttachments,
+  findMessageForFetch,
+  formatBoundAttachments,
+  isGroupFileMessage,
+  isTabularFileName,
+  parseFileContent,
+  pickRecentChatAttachments,
+} from "./attachments.ts";
+export type { BoundAttachment } from "./attachments.ts";

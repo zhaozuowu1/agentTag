@@ -174,4 +174,130 @@ describe("csv chart acceptance path", () => {
       },
     ]);
   });
+
+  it("still fetches the CSV when file and @ were separate messages and the model passes file_key", async () => {
+    const files = new Map<string, Uint8Array>();
+    const sandbox = memorySandbox(files);
+    const replies: unknown[] = [];
+    const client: FeishuClient = {
+      botOpenId: async () => "ou_bot",
+      replyInThread: async () => ({ messageId: "om_x", threadId: "omt_new" }),
+      replyInThreadMessage: async (messageId, input) => {
+        replies.push({ messageId, input });
+        return { messageId: "om_img", threadId: "omt_new" };
+      },
+      patchCard: async () => {},
+      sendText: async () => ({ messageId: "om_t" }),
+      sendCard: async () => ({ messageId: "om_card" }),
+      getChat: async () => ({ chatType: "private", external: false, name: "群" }),
+      listMessages: async (opts) =>
+        opts.container === "chat"
+          ? [
+              {
+                messageId: "om_csv",
+                chatId: "oc_auth",
+                threadId: null,
+                parentId: null,
+                rootId: null,
+                messageType: "file",
+                text: "",
+                senderOpenId: "ou_user",
+                createTime: String(Date.now() - 5_000),
+                mentions: [],
+                fileKey: "file_csv_1",
+                fileName: "sandbox-demo-sales.csv",
+                imageKey: null,
+              },
+            ] satisfies FeishuMessage[]
+          : [],
+      downloadMessageResource: async (messageId, fileKey) => {
+        expect(messageId).toBe("om_csv");
+        expect(fileKey).toBe("file_csv_1");
+        return new TextEncoder().encode(CSV);
+      },
+      uploadImage: async (bytes, filename) => {
+        expect(filename).toBe("chart.png");
+        expect(bytes[0]).toBe(0x89);
+        return { imageKey: "img_chart" };
+      },
+      uploadFile: async () => ({ fileKey: "file_x" }),
+    };
+
+    const extraTools = {
+      ...createSandboxTools(sandbox, { bundle: { allowedHosts: [], connections: [] } }),
+      ...createFeishuFileTools({
+        client,
+        sandbox,
+        replyToMessageId: "om_card",
+        chatId: "oc_auth",
+        threadId: "omt_new",
+      }),
+    };
+
+    const turns: string[] = [];
+    const llm: LlmClient = {
+      async create() {
+        const step = turns.length;
+        turns.push("llm");
+        if (step === 0) {
+          return {
+            stop_reason: "tool_use",
+            content: [{ type: "tool_use", id: "t1", name: "feishu_fetch_file", input: { messageId: "file_csv_1", destPath: "sales.csv" } }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          };
+        }
+        if (step === 1) {
+          return {
+            stop_reason: "tool_use",
+            content: [{ type: "tool_use", id: "t2", name: "bash", input: { command: "python3 plot.py && ls chart.png" } }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          };
+        }
+        if (step === 2) {
+          return {
+            stop_reason: "tool_use",
+            content: [{ type: "tool_use", id: "t3", name: "feishu_post_file", input: { path: "chart.png" } }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          };
+        }
+        return {
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: "已把图表发回话题。" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+
+    await processSessionJob(
+      { sessionId: "sess_chart" },
+      {
+        llm,
+        model: "qwen3.8-max",
+        sandboxEnabled: true,
+        extraTools,
+        extraToolDefs: [...SANDBOX_TOOL_DEFS, ...FEISHU_FILE_TOOL_DEFS],
+        loadSession: async () => ({
+          ...session(),
+          threadId: "omt_new",
+          transcript: [{ type: "user", openId: "ou_user", text: "用我刚上传的 CSV 画图并把 png 发回这个话题", at: "t" }],
+        }),
+        patchCard: async () => {},
+        recordUsage: async () => {},
+        recordAudit: async () => {},
+        markSession: async () => {},
+        appendEvents: async () => {},
+        listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+      },
+    );
+
+    expect(new TextDecoder().decode(files.get("sales.csv"))).toBe(CSV);
+    expect(files.get("chart.png")?.[0]).toBe(0x89);
+    expect(replies).toEqual([
+      {
+        messageId: "om_card",
+        input: { msgType: "image", content: { image_key: "img_chart" } },
+      },
+    ]);
+  });
 });
