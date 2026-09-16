@@ -1,5 +1,5 @@
 {
-  "name": "@agenttag/runtime",
+  "name": "@agenttag/proxy",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,14 +10,8 @@
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
   },
-  "dependencies": {
-    "@agenttag/domain": "workspace:*",
-    "@agenttag/feishu": "workspace:*",
-    "@agenttag/memory": "workspace:*",
-    "@agenttag/proxy": "workspace:*",
-    "@agenttag/sandbox": "workspace:*"
-  },
   "devDependencies": {
+    "@agenttag/sandbox": "workspace:*",
     "@types/node": "^22.15.30",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"

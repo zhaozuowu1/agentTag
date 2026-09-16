@@ -123,3 +123,18 @@ describe("requireEncryptKeyIfHttp", () => {
     expect(() => requireEncryptKeyIfHttp("http", "encrypt")).not.toThrow();
   });
 });
+
+describe("sandbox proxy env", () => {
+  it("treats SANDBOX_ALLOWED_HOSTS as optional", () => {
+    const env = parseEnv(required);
+    expect(env.SANDBOX_ALLOWED_HOSTS).toBeUndefined();
+    expect(env.AGENTTAG_SANDBOX_IMAGE).toBeUndefined();
+    const withHosts = parseEnv({
+      ...required,
+      SANDBOX_ALLOWED_HOSTS: "pypi.org,files.pythonhosted.org",
+      AGENTTAG_SANDBOX_IMAGE: "agenttag-sandbox:local",
+    });
+    expect(withHosts.SANDBOX_ALLOWED_HOSTS).toBe("pypi.org,files.pythonhosted.org");
+    expect(withHosts.AGENTTAG_SANDBOX_IMAGE).toBe("agenttag-sandbox:local");
+  });
+});

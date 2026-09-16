@@ -6,6 +6,7 @@ function stubClient(calls: Array<{ container: string; id: string }>): FeishuClie
   return {
     botOpenId: async () => "ou_bot",
     replyInThread: async () => ({ messageId: "om_x", threadId: "omt_x" }),
+    replyInThreadMessage: async () => ({ messageId: "om_y", threadId: "omt_x" }),
     patchCard: async () => {},
     sendText: async () => ({ messageId: "om_t" }),
     sendCard: async () => ({ messageId: "om_card" }),
@@ -14,6 +15,9 @@ function stubClient(calls: Array<{ container: string; id: string }>): FeishuClie
       calls.push({ container: opts.container, id: opts.id });
       return [] as FeishuMessage[];
     },
+    downloadMessageResource: async () => new Uint8Array(),
+    uploadImage: async () => ({ imageKey: "img_x" }),
+    uploadFile: async () => ({ fileKey: "file_x" }),
   };
 }
 

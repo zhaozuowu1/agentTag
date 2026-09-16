@@ -166,3 +166,94 @@ describe("patchCard", () => {
     expect(JSON.parse(body.content as string)).toMatchObject({ schema: "2.0" });
   });
 });
+
+describe("listMessages file metadata", () => {
+  it("exposes file_key and file_name from file messages so the agent can import a CSV", async () => {
+    const { fetchImpl } = recordFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              items: [
+                {
+                  message_id: "om_csv",
+                  chat_id: "oc_auth",
+                  msg_type: "file",
+                  body: { content: JSON.stringify({ file_key: "file_csv_1", file_name: "sales.csv" }) },
+                  sender: { id: "ou_user" },
+                  create_time: "t1",
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    const client = clientWith(fetchImpl);
+    const messages = await client.listMessages({ container: "chat", id: "oc_auth" });
+    expect(messages[0]).toMatchObject({
+      messageId: "om_csv",
+      messageType: "file",
+      fileKey: "file_csv_1",
+      fileName: "sales.csv",
+      imageKey: null,
+    });
+  });
+});
+
+describe("downloadMessageResource", () => {
+  it("GETs the IM resource bytes without JSON wrapping", async () => {
+    const csv = "month,amount\n1,10\n";
+    const { fetchImpl, calls } = recordFetch((req) => {
+      if (req.url.includes("/resources/")) {
+        return new Response(csv, { status: 200, headers: { "Content-Type": "text/csv" } });
+      }
+      return new Response(JSON.stringify({ code: 0, data: {} }), { status: 200 });
+    });
+    const client = clientWith(fetchImpl);
+    const bytes = await client.downloadMessageResource("om_csv", "file_csv_1", "file");
+    expect(new TextDecoder().decode(bytes)).toBe(csv);
+    const req = calls.find((call) => call.url.includes("/resources/"));
+    expect(req?.method).toBe("GET");
+    expect(new URL(req!.url).pathname).toBe("/open-apis/im/v1/messages/om_csv/resources/file_csv_1");
+    expect(new URL(req!.url).searchParams.get("type")).toBe("file");
+  });
+});
+
+describe("uploadImage and reply image in thread", () => {
+  it("uploads png bytes then replies in the thread with image_key", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const { fetchImpl, calls } = recordFetch((req) => {
+      if (req.url.includes("/im/v1/images")) {
+        return new Response(JSON.stringify({ code: 0, data: { image_key: "img_chart" } }), { status: 200 });
+      }
+      if (req.url.endsWith("/reply")) {
+        return new Response(JSON.stringify({ code: 0, data: { message_id: "om_img", thread_id: "omt_1" } }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ code: 0, data: {} }), { status: 200 });
+    });
+    const client = clientWith(fetchImpl);
+    const uploaded = await client.uploadImage(png, "chart.png");
+    expect(uploaded).toEqual({ imageKey: "img_chart" });
+    const replied = await client.replyInThreadMessage("om_card", {
+      msgType: "image",
+      content: { image_key: uploaded.imageKey },
+    });
+    expect(replied).toEqual({ messageId: "om_img", threadId: "omt_1" });
+
+    const uploadReq = calls.find((call) => call.url.includes("/im/v1/images"));
+    expect(uploadReq?.method).toBe("POST");
+    const contentType = uploadReq?.headers.get("content-type") ?? "";
+    expect(contentType).toMatch(/multipart\/form-data/i);
+    expect(uploadReq?.headers.get("authorization")).toBe("Bearer tenant-token");
+
+    const replyReq = calls.find((call) => call.url.endsWith("/reply") && call.method === "POST");
+    const replyBody = JSON.parse(await replyReq!.text()) as Record<string, unknown>;
+    expect(replyBody.reply_in_thread).toBe(true);
+    expect(replyBody.msg_type).toBe("image");
+    expect(JSON.parse(String(replyBody.content))).toEqual({ image_key: "img_chart" });
+  });
+});

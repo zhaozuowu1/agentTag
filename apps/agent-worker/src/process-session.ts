@@ -41,6 +41,8 @@ export interface ProcessSessionDeps {
   listMessages: (input: unknown) => Promise<string>;
   searchMessages?: (input: unknown) => Promise<string>;
   extraTools?: Record<string, (input: unknown) => Promise<string>>;
+  extraToolDefs?: unknown[];
+  sandboxEnabled?: boolean;
   memoryBlock?: string;
   getBudget(tenantKey: string): Promise<{ usedUsd: number; limitUsd: number | null }>;
 }
@@ -60,8 +62,11 @@ function userTurnCount(transcript: TranscriptEvent[]): number {
   return transcript.filter((event) => event.type === "user").length;
 }
 
-export function workerSystemPrompt(modelId: string, memoryBlock?: string): string {
-  return `你是飞书群里的 AI 队友。你的底层模型是 ${modelId}。用中文回答。不要自称 Claude、GPT 或其他厂商模型。先用工具了解本群现场，再给出简洁结论。只把稳定约定写入记忆工具（若可用），不要把流水账当记忆。\n${memoryBlock ?? "本群尚无已保存记忆。"}`;
+export function workerSystemPrompt(modelId: string, memoryBlock?: string, extras?: { sandbox?: boolean }): string {
+  const sandboxLine = extras?.sandbox
+    ? "你可以使用隔离沙箱工具（bash、read_file、write_file、http_request）处理文件与作图；出站 HTTP 必须走允许名单。凭证不会出现在沙箱里。把图表 png 用 feishu_post_file 发回当前话题。\n"
+    : "";
+  return `你是飞书群里的 AI 队友。你的底层模型是 ${modelId}。用中文回答。不要自称 Claude、GPT 或其他厂商模型。先用工具了解本群现场，再给出简洁结论。只把稳定约定写入记忆工具（若可用），不要把流水账当记忆。\n${sandboxLine}${memoryBlock ?? "本群尚无已保存记忆。"}`;
 }
 
 export function dashscopeFailureReply(error: unknown, modelId: string): string {
@@ -142,14 +147,14 @@ export async function processSessionJob(
         llm: deps.llm,
         model: modelId,
         enableThinking,
-        system: workerSystemPrompt(modelId, deps.memoryBlock),
+        system: workerSystemPrompt(modelId, deps.memoryBlock, { sandbox: deps.sandboxEnabled === true }),
         messages,
         tools: {
           feishu_list_messages: deps.listMessages,
           feishu_search_messages: deps.searchMessages ?? deps.listMessages,
           ...deps.extraTools,
         },
-        toolDefs: [...FEISHU_MESSAGE_TOOL_DEFS, ...MEMORY_TOOL_DEFS],
+        toolDefs: [...FEISHU_MESSAGE_TOOL_DEFS, ...MEMORY_TOOL_DEFS, ...(deps.extraToolDefs ?? [])],
         initial,
         onTurn: async (turn) => {
           await deps.patchCard(session.checklistMessageId!, cardFrom(turn, turn.stop ? "处理完成" : "正在处理", modelId, enableThinking));

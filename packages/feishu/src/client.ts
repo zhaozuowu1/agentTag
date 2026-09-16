@@ -151,6 +151,72 @@ export function createFeishuClient(options: CreateFeishuClientOptions): FeishuCl
       );
       return (data.items ?? []).map(toFeishuMessage);
     },
+
+    async replyInThreadMessage(messageId, input) {
+      const data = await api<{ message_id: string; thread_id?: string }>(
+        "POST",
+        `/open-apis/im/v1/messages/${encodeURIComponent(messageId)}/reply`,
+        {
+          msg_type: input.msgType,
+          content: typeof input.content === "string" ? input.content : JSON.stringify(input.content),
+          reply_in_thread: true,
+        },
+      );
+      return { messageId: data.message_id, threadId: data.thread_id ?? null };
+    },
+
+    async downloadMessageResource(messageId, fileKey, type) {
+      const token = await tenantToken();
+      const path = `/open-apis/im/v1/messages/${encodeURIComponent(messageId)}/resources/${encodeURIComponent(fileKey)}?type=${encodeURIComponent(type)}`;
+      const res = await fetchImpl(`${baseUrl}${path}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const contentType = res.headers.get("content-type") ?? "";
+      if (contentType.includes("application/json")) {
+        const json = (await res.json()) as FeishuEnvelope<unknown>;
+        throw new FeishuApiError(json.msg ?? "feishu resource error", json.code ?? res.status, res.status);
+      }
+      if (!res.ok) {
+        throw new FeishuApiError("feishu resource error", res.status, res.status);
+      }
+      return new Uint8Array(await res.arrayBuffer());
+    },
+
+    async uploadImage(bytes, filename) {
+      const token = await tenantToken();
+      const form = new FormData();
+      form.append("image_type", "message");
+      form.append("image", new Blob([bytes]), filename);
+      const res = await fetchImpl(`${baseUrl}/open-apis/im/v1/images`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const json = (await res.json()) as FeishuEnvelope<{ image_key?: string }>;
+      if (!res.ok || json.code !== 0 || !json.data?.image_key) {
+        throw new FeishuApiError(json.msg ?? "failed to upload image", json.code ?? res.status, res.status);
+      }
+      return { imageKey: json.data.image_key };
+    },
+
+    async uploadFile(bytes, filename) {
+      const token = await tenantToken();
+      const form = new FormData();
+      form.append("file_type", "stream");
+      form.append("file_name", filename);
+      form.append("file", new Blob([bytes]), filename);
+      const res = await fetchImpl(`${baseUrl}/open-apis/im/v1/files`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const json = (await res.json()) as FeishuEnvelope<{ file_key?: string }>;
+      if (!res.ok || json.code !== 0 || !json.data?.file_key) {
+        throw new FeishuApiError(json.msg ?? "failed to upload file", json.code ?? res.status, res.status);
+      }
+      return { fileKey: json.data.file_key };
+    },
   };
 }
 
@@ -178,6 +244,7 @@ interface RawFeishuMessage {
 }
 
 function toFeishuMessage(raw: RawFeishuMessage): FeishuMessage {
+  const meta = extractFileMeta(raw.body?.content, raw.msg_type);
   return {
     messageId: raw.message_id,
     chatId: raw.chat_id,
@@ -193,7 +260,30 @@ function toFeishuMessage(raw: RawFeishuMessage): FeishuMessage {
       name: mention.name ?? "",
       key: mention.key ?? "",
     })),
+    fileKey: meta.fileKey,
+    fileName: meta.fileName,
+    imageKey: meta.imageKey,
   };
+}
+
+function extractFileMeta(
+  content: string | undefined,
+  msgType: string,
+): { fileKey: string | null; fileName: string | null; imageKey: string | null } {
+  const empty = { fileKey: null, fileName: null, imageKey: null };
+  if (!content) {
+    return empty;
+  }
+  try {
+    const parsed = JSON.parse(content) as { file_key?: string; file_name?: string; image_key?: string };
+    return {
+      fileKey: msgType === "file" ? parsed.file_key ?? null : parsed.file_key ?? null,
+      fileName: parsed.file_name ?? null,
+      imageKey: parsed.image_key ?? null,
+    };
+  } catch {
+    return empty;
+  }
 }
 
 function extractText(content: string | undefined, msgType: string): string {
