@@ -46,6 +46,8 @@ export const envSchema = z.object({
   REDIS_URL: z.string().min(1),
   ADMIN_TOKEN: z.string().min(1),
   CREDENTIAL_MASTER_KEY: z.string().min(1),
+  SANDBOX_ALLOWED_HOSTS: z.preprocess(emptyToUndefined, z.string().optional()),
+  AGENTTAG_SANDBOX_IMAGE: z.preprocess(emptyToUndefined, z.string().optional()),
 });
 
 export type Env = z.infer<typeof envSchema>;

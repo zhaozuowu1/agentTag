@@ -47,7 +47,6 @@ export async function createDockerSandbox(opts: CreateDockerSandboxOptions): Pro
           HTTPS_PROXY: opts.httpProxyUrl,
           http_proxy: opts.httpProxyUrl,
           https_proxy: opts.httpProxyUrl,
-          NO_PROXY: "localhost,127.0.0.1",
         }
       : {}),
     ...(opts.env ?? {}),
