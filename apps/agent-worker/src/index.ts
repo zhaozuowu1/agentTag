@@ -14,7 +14,7 @@ import {
 } from "@agenttag/runtime";
 import { createDbMemoryStore } from "@agenttag/memory";
 import { parseAllowedHosts, startAgentProxy } from "@agenttag/proxy";
-import { createDockerSandbox, DEFAULT_SANDBOX_IMAGE } from "@agenttag/sandbox";
+import { createDockerSandbox, resolveSandboxImage } from "@agenttag/sandbox";
 import { Worker } from "bullmq";
 import { and, eq, gte, sql, sum } from "drizzle-orm";
 import { Redis } from "ioredis";
@@ -80,7 +80,7 @@ export async function startWorker() {
         try {
           sandbox = await createDockerSandbox({
             sessionId: row.id,
-            image: env.AGENTTAG_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE,
+            image: await resolveSandboxImage(env.AGENTTAG_SANDBOX_IMAGE),
             httpProxyUrl: `http://host.docker.internal:${proxy.port}`,
           });
           await db

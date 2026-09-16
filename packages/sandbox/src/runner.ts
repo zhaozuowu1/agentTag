@@ -170,6 +170,19 @@ export async function createDockerSandbox(opts: CreateDockerSandboxOptions): Pro
   };
 }
 
+export async function resolveSandboxImage(preferred?: string): Promise<string> {
+  const candidates = [...new Set([preferred?.trim(), DEFAULT_SANDBOX_IMAGE, "python:3.12-slim"].filter((value): value is string => Boolean(value)))];
+  for (const image of candidates) {
+    try {
+      await execFileAsync("docker", ["image", "inspect", image], { encoding: "utf8" });
+      return image;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error("找不到可用的沙箱镜像");
+}
+
 export async function ensureSandboxImage(opts: { image?: string; contextDir?: string } = {}): Promise<string> {
   const image = opts.image?.trim() || DEFAULT_SANDBOX_IMAGE;
   try {

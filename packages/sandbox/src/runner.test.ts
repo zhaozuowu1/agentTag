@@ -6,6 +6,7 @@ import {
   SANDBOX_MEMORY_BYTES,
   SANDBOX_WALL_MS,
   createDockerSandbox,
+  resolveSandboxImage,
   type Sandbox,
 } from "./runner.ts";
 
@@ -132,5 +133,12 @@ describe("createDockerSandbox", () => {
 
     await expect(execFileAsync("docker", ["inspect", id])).rejects.toThrow();
     await expect(sandbox.exec("echo still-here")).rejects.toThrow();
+  });
+});
+
+describe("resolveSandboxImage", () => {
+  it("falls back to python:3.12-slim when the matplotlib image is not built", async () => {
+    const image = await resolveSandboxImage("agenttag-sandbox:does-not-exist");
+    expect(image).toBe("python:3.12-slim");
   });
 });
