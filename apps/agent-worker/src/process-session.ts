@@ -47,10 +47,35 @@ export interface ProcessSessionDeps {
   getBudget(tenantKey: string): Promise<{ usedUsd: number; limitUsd: number | null }>;
 }
 
+function isEmptyReply(result: AgentTurnResult): boolean {
+  return !result.replyMarkdown.trim();
+}
+
+function cardTitle(result: AgentTurnResult): string {
+  if (!result.stop) {
+    return "正在处理";
+  }
+  return isEmptyReply(result) ? "未能完成" : "处理完成";
+}
+
+function withEmptyHint(result: AgentTurnResult): AgentTurnResult {
+  if (!result.stop || result.replyMarkdown.trim()) {
+    return result;
+  }
+  return {
+    ...result,
+    replyMarkdown:
+      "本轮没有生成回复或图表。若要画图，请先在本群上传 CSV（可与 @ 分开发），或把文件和指令放在同一条消息里。",
+    checklist: result.checklist.map((item) =>
+      item.status === "doing" ? { ...item, status: "blocked" as const } : item,
+    ),
+  };
+}
+
 function cardFrom(result: AgentTurnResult, title: string, modelId: string, enableThinking: boolean) {
   return progressCard({
     title,
-    statusText: result.stop ? "已完成" : "进行中",
+    statusText: result.stop ? (title === "未能完成" ? "未完成" : "已完成") : "进行中",
     checklist: result.checklist,
     markdown: result.replyMarkdown,
     modelId,
@@ -64,7 +89,7 @@ function userTurnCount(transcript: TranscriptEvent[]): number {
 
 export function workerSystemPrompt(modelId: string, memoryBlock?: string, extras?: { sandbox?: boolean }): string {
   const sandboxLine = extras?.sandbox
-    ? "你可以使用隔离沙箱工具（bash、read_file、write_file、http_request）处理文件与作图；出站 HTTP 必须走允许名单。凭证不会出现在沙箱里。把图表 png 用 feishu_post_file 发回当前话题。\n"
+    ? "你可以使用隔离沙箱工具（bash、read_file、write_file、http_request）处理文件与作图；出站 HTTP 必须走允许名单。凭证不会出现在沙箱里。用户消息里的本轮可用附件请用 feishu_fetch_file 的 messageId 下载，不要把 file_key 当成 messageId。把图表 png 用 feishu_post_file 发回当前话题。\n"
     : "";
   return `你是飞书群里的 AI 队友。你的底层模型是 ${modelId}。用中文回答。不要自称 Claude、GPT 或其他厂商模型。先用工具了解本群现场，再给出简洁结论。只把稳定约定写入记忆工具（若可用），不要把流水账当记忆。\n${sandboxLine}${memoryBlock ?? "本群尚无已保存记忆。"}`;
 }
@@ -157,7 +182,9 @@ export async function processSessionJob(
         toolDefs: [...FEISHU_MESSAGE_TOOL_DEFS, ...MEMORY_TOOL_DEFS, ...(deps.extraToolDefs ?? [])],
         initial,
         onTurn: async (turn) => {
-          await deps.patchCard(session.checklistMessageId!, cardFrom(turn, turn.stop ? "处理完成" : "正在处理", modelId, enableThinking));
+          const title = cardTitle(turn);
+          const visible = turn.stop ? withEmptyHint(turn) : turn;
+          await deps.patchCard(session.checklistMessageId!, cardFrom(visible, title, modelId, enableThinking));
         },
         onUsage: async (usage) => {
           await deps.recordUsage({
@@ -179,14 +206,16 @@ export async function processSessionJob(
           });
         },
       });
-      await deps.patchCard(session.checklistMessageId, cardFrom(result, "处理完成", modelId, enableThinking));
+      const title = cardTitle(result);
+      const finished = withEmptyHint(result);
+      await deps.patchCard(session.checklistMessageId, cardFrom(finished, title, modelId, enableThinking));
       await deps.appendEvents(
         session.id,
         [
           {
             type: "assistant",
-            text: result.replyMarkdown,
-            ...(result.reasoning ? { reasoning: result.reasoning } : {}),
+            text: finished.replyMarkdown,
+            ...(finished.reasoning ? { reasoning: finished.reasoning } : {}),
             at: new Date().toISOString(),
           },
         ],

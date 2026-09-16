@@ -185,6 +185,7 @@ export async function startGateway() {
         },
         sendCard: async (chatId, card) => feishu.sendCard(chatId, card),
         appendUserMessage: (sessionId, openId, text) => store.appendUserMessage(sessionId, openId, text),
+        listChatMessages: (chatId) => feishu.listMessages({ container: "chat", id: chatId, pageSize: 50 }),
         enqueue: async (job) => {
           try {
             await queue.add("session.run", job, {

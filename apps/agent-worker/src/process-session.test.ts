@@ -462,6 +462,39 @@ describe("processSessionJob", () => {
     expect(JSON.stringify(seen[1])).toContain("kimi-k3 思考块");
     expect(JSON.stringify(seen[1])).not.toContain("sk-");
   });
+
+  it("does not mark an empty reply as 处理完成", async () => {
+    const patches: unknown[] = [];
+    const llm: LlmClient = {
+      async create() {
+        return {
+          stop_reason: "end_turn",
+          content: [],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+    await processSessionJob(
+      { sessionId: "sess_1" },
+      {
+        llm,
+        model: "qwen3.8-max",
+        loadSession: async () => session(),
+        patchCard: async (_id, card) => {
+          patches.push(card);
+        },
+        recordUsage: async () => {},
+        recordAudit: async () => {},
+        markSession: async () => {},
+        appendEvents: async () => {},
+        listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+      },
+    );
+    const last = patches.at(-1) as { header?: { title?: { content?: string } }; body?: { elements?: Array<{ content?: string }> } };
+    expect(last.header?.title?.content).not.toBe("处理完成");
+    expect(last.body?.elements?.[0]?.content).toMatch(/CSV|附件|文件/);
+  });
 });
 
 describe("dashscopeFailureReply", () => {

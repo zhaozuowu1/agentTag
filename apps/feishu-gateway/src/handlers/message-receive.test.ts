@@ -1,4 +1,4 @@
-import { progressCard } from "@agenttag/feishu";
+import { progressCard, type FeishuMessage } from "@agenttag/feishu";
 import { describe, expect, it } from "vitest";
 import type { EventProgress } from "../event-progress.ts";
 import { handleMessageReceive, type MessageReceiveDeps, type ReceiveMessageEvent } from "./message-receive.ts";
@@ -58,6 +58,7 @@ function createDeps(overrides: Partial<MessageReceiveDeps> = {}) {
     sendText: async () => {},
     sendCard: async () => ({ messageId: "om_fallback_card" }),
     appendUserMessage: async () => {},
+    listChatMessages: async () => [],
     enqueue: async (job) => {
       enqueued.push(job);
     },
@@ -396,5 +397,118 @@ describe("progressCard copy", () => {
       checklist: [{ id: "queue", label: "开始处理", status: "doing" }],
     });
     expect(card.header.title.content).toBe("收到，正在处理");
+  });
+});
+
+describe("bind recent group file when @ has no attachment", () => {
+  const csvMessage = (): FeishuMessage => ({
+    messageId: "om_csv",
+    chatId: "oc_auth",
+    threadId: null,
+    parentId: null,
+    rootId: null,
+    messageType: "file",
+    text: "",
+    senderOpenId: "ou_user",
+    createTime: String(Date.now() - 5_000),
+    mentions: [],
+    fileKey: "file_csv_1",
+    fileName: "sandbox-demo-sales.csv",
+    imageKey: null,
+  });
+
+  it("injects the recent CSV messageId into a new session when @ is a separate text", async () => {
+    const created: Array<{ userText: string }> = [];
+    const deps = createDeps({
+      listChatMessages: async () => [csvMessage()],
+      createSession: async (input) => {
+        created.push({ userText: input.userText });
+        return { id: input.id, status: "running" };
+      },
+    });
+    await handleMessageReceive(
+      {
+        ...event,
+        eventId: "ev_at_after_csv",
+        messageId: "om_at",
+        text: "@_user_1 用我刚上传的 CSV 画图",
+      },
+      deps,
+    );
+    expect(created).toHaveLength(1);
+    expect(created[0]?.userText).toContain("用我刚上传的 CSV 画图");
+    expect(created[0]?.userText).toContain("om_csv");
+    expect(created[0]?.userText).toContain("file_csv_1");
+    expect(created[0]?.userText).toContain("sandbox-demo-sales.csv");
+    expect(deps.enqueued).toEqual([{ sessionId: "sess_1" }]);
+  });
+
+  it("does not invent an attachment from an image or a stale file", async () => {
+    const created: Array<{ userText: string }> = [];
+    const deps = createDeps({
+      listChatMessages: async () => [
+        {
+          ...csvMessage(),
+          messageId: "om_img",
+          messageType: "image",
+          fileKey: null,
+          fileName: "photo.png",
+          imageKey: "img_1",
+          createTime: String(Date.now() - 1_000),
+        },
+        {
+          ...csvMessage(),
+          messageId: "om_stale",
+          fileKey: "file_stale",
+          fileName: "stale.csv",
+          createTime: String(Date.now() - 3 * 60 * 60 * 1000),
+        },
+      ],
+      createSession: async (input) => {
+        created.push({ userText: input.userText });
+        return { id: input.id, status: "running" };
+      },
+    });
+    await handleMessageReceive(
+      {
+        ...event,
+        eventId: "ev_at_no_csv",
+        messageId: "om_at",
+        text: "@_user_1 画图",
+      },
+      deps,
+    );
+    expect(created[0]?.userText).toBe("画图");
+    expect(created[0]?.userText).not.toContain("om_stale");
+    expect(created[0]?.userText).not.toContain("file_stale");
+  });
+
+  it("keeps messageId when a file is posted as an in-thread follow-up", async () => {
+    const appended: Array<{ sessionId: string; text: string }> = [];
+    const deps = createDeps({
+      findSession: async () => ({ id: "sess_live", status: "idle" }),
+      appendUserMessage: async (sessionId, _openId, text) => {
+        appended.push({ sessionId, text });
+      },
+    });
+    await handleMessageReceive(
+      {
+        ...event,
+        eventId: "ev_thread_file",
+        messageId: "om_thread_csv",
+        threadId: "omt_1",
+        mentionOpenIds: [],
+        messageType: "file",
+        fileKey: "file_csv_2",
+        fileName: "sales.csv",
+        text: JSON.stringify({ file_key: "file_csv_2", file_name: "sales.csv" }),
+      },
+      deps,
+    );
+    expect(appended).toHaveLength(1);
+    expect(appended[0]?.sessionId).toBe("sess_live");
+    expect(appended[0]?.text).toContain("om_thread_csv");
+    expect(appended[0]?.text).toContain("file_csv_2");
+    expect(deps.enqueued).toEqual([{ sessionId: "sess_live" }]);
   });
 });
