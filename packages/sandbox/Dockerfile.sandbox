@@ -22,7 +22,6 @@ RUN apt-get update \
 COPY mpl/matplotlibrc /etc/matplotlibrc
 COPY mpl/prepare_cjk_font.py /tmp/prepare_cjk_font.py
 RUN python3 /tmp/prepare_cjk_font.py \
-  && pip uninstall -y fonttools \
   && rm -f /tmp/prepare_cjk_font.py
 
 USER sandbox

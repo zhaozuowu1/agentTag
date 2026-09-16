@@ -90,6 +90,8 @@ describe("sandbox CJK matplotlib config", () => {
     expect(dockerfile).toMatch(/fonts-noto-cjk/);
     expect(dockerfile).toMatch(/MATPLOTLIBRC=/);
     expect(dockerfile).toMatch(/COPY\s+\S*matplotlibrc/);
+    expect(dockerfile).toMatch(/pip install[^\n]*\bfonttools\b/);
+    expect(dockerfile).not.toMatch(/pip uninstall[^\n]*fonttools/);
     expect(existsSync(rcPath)).toBe(true);
     const rc = readFileSync(rcPath, "utf8");
     expect(rc).toMatch(/Noto Sans CJK SC/);
