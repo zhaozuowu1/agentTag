@@ -328,6 +328,7 @@ describe("createOpenAiCompatLlm", () => {
       {
         botOpenId: async () => "ou_bot",
         replyInThread: async () => ({ messageId: "om_x", threadId: "omt_x" }),
+        replyInThreadMessage: async () => ({ messageId: "om_y", threadId: "omt_x" }),
         patchCard: async () => {},
         sendText: async () => ({ messageId: "om_t" }),
         sendCard: async () => ({ messageId: "om_card" }),
@@ -336,6 +337,9 @@ describe("createOpenAiCompatLlm", () => {
           listCalls.push({ container: opts.container, id: opts.id });
           return [] as FeishuMessage[];
         },
+        downloadMessageResource: async () => new Uint8Array(),
+        uploadImage: async () => ({ imageKey: "img_x" }),
+        uploadFile: async () => ({ fileKey: "file_x" }),
       } satisfies FeishuClient,
       { chatId: "oc_auth", threadId: "omt_1" },
     );

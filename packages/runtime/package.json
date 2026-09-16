@@ -13,7 +13,9 @@
   "dependencies": {
     "@agenttag/domain": "workspace:*",
     "@agenttag/feishu": "workspace:*",
-    "@agenttag/memory": "workspace:*"
+    "@agenttag/memory": "workspace:*",
+    "@agenttag/proxy": "workspace:*",
+    "@agenttag/sandbox": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",

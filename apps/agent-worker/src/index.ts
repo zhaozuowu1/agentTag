@@ -2,8 +2,19 @@ import { parseEnv } from "@agenttag/config";
 import { auditEvents, createDb, tenants, usageEvents, workingSessions } from "@agenttag/db";
 import { resolveRuntimeModel, tokensToUsd } from "@agenttag/domain";
 import { createFeishuClient } from "@agenttag/feishu";
-import { createFeishuMessageTools, createMemoryTools, createOpenAiCompatLlm, memoryPromptBlock } from "@agenttag/runtime";
+import {
+  createFeishuFileTools,
+  createFeishuMessageTools,
+  createMemoryTools,
+  createOpenAiCompatLlm,
+  createSandboxTools,
+  FEISHU_FILE_TOOL_DEFS,
+  memoryPromptBlock,
+  SANDBOX_TOOL_DEFS,
+} from "@agenttag/runtime";
 import { createDbMemoryStore } from "@agenttag/memory";
+import { parseAllowedHosts, startAgentProxy } from "@agenttag/proxy";
+import { createDockerSandbox, DEFAULT_SANDBOX_IMAGE } from "@agenttag/sandbox";
 import { Worker } from "bullmq";
 import { and, eq, gte, sql, sum } from "drizzle-orm";
 import { Redis } from "ioredis";
@@ -23,6 +34,16 @@ export async function startWorker() {
   const llm = createOpenAiCompatLlm({
     apiKey: env.DASHSCOPE_API_KEY,
     baseURL: env.DASHSCOPE_BASE_URL,
+  });
+  const bundle = {
+    allowedHosts: parseAllowedHosts(env.SANDBOX_ALLOWED_HOSTS),
+    connections: [],
+  };
+  const proxy = await startAgentProxy({
+    bundle,
+    host: "0.0.0.0",
+    port: 0,
+    secrets: {},
   });
 
   const worker = new Worker(
@@ -54,7 +75,49 @@ export async function startWorker() {
         tenantEnableThinking: tenantRows[0]?.enableThinking,
         envModelId: env.DASHSCOPE_MODEL,
       });
-      await processSessionJob(
+      let sandbox: Awaited<ReturnType<typeof createDockerSandbox>> | null = null;
+      try {
+        try {
+          sandbox = await createDockerSandbox({
+            sessionId: row.id,
+            image: env.AGENTTAG_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE,
+            httpProxyUrl: `http://host.docker.internal:${proxy.port}`,
+          });
+          await db
+            .update(workingSessions)
+            .set({ sandboxId: sandbox.id, lastActivityAt: new Date() })
+            .where(eq(workingSessions.id, row.id));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "sandbox error";
+          console.error("sandbox unavailable", message);
+        }
+        const extraTools: Record<string, (input: unknown) => Promise<string>> = { ...memoryTools };
+        const extraToolDefs: unknown[] = [];
+        if (sandbox) {
+          Object.assign(
+            extraTools,
+            createSandboxTools(sandbox, {
+              bundle,
+              onBlockedHost: async (_host, message) => {
+                const replyTo = row.checklistMessageId ?? row.rootMessageId;
+                if (replyTo) {
+                  await feishu
+                    .replyInThreadMessage(replyTo, { msgType: "text", content: { text: message } })
+                    .catch(() => undefined);
+                }
+              },
+            }),
+            createFeishuFileTools({
+              client: feishu,
+              sandbox,
+              replyToMessageId: row.checklistMessageId ?? row.rootMessageId,
+              chatId: row.chatId,
+              threadId: row.threadId,
+            }),
+          );
+          extraToolDefs.push(...SANDBOX_TOOL_DEFS, ...FEISHU_FILE_TOOL_DEFS);
+        }
+        await processSessionJob(
         { sessionId },
         {
           llm,
@@ -125,7 +188,9 @@ export async function startWorker() {
           },
           listMessages: tools.feishu_list_messages,
           searchMessages: tools.feishu_search_messages,
-          extraTools: memoryTools,
+          extraTools,
+          extraToolDefs,
+          sandboxEnabled: Boolean(sandbox),
           memoryBlock: memoryPromptBlock(memories),
           getBudget: async (tenantKey) => {
             const tenantRows = await db.select().from(tenants).where(eq(tenants.tenantKey, tenantKey)).limit(1);
@@ -148,6 +213,15 @@ export async function startWorker() {
           },
         },
       );
+      } finally {
+        if (sandbox) {
+          await sandbox.destroy().catch(() => undefined);
+          await db
+            .update(workingSessions)
+            .set({ sandboxId: null, lastActivityAt: new Date() })
+            .where(eq(workingSessions.id, row.id));
+        }
+      }
     },
     { connection: redis },
   );

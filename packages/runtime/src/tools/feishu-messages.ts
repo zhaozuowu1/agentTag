@@ -52,6 +52,10 @@ export function createFeishuMessageTools(client: FeishuClient, fallback: { chatI
           senderOpenId: message.senderOpenId,
           text: message.text,
           createTime: message.createTime,
+          messageType: message.messageType,
+          fileKey: message.fileKey,
+          fileName: message.fileName,
+          imageKey: message.imageKey,
         })),
       );
     },

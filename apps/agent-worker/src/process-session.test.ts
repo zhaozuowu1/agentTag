@@ -498,3 +498,42 @@ describe("dashscopeFailureReply", () => {
     ).not.toContain("sk-dashscope-test");
   });
 });
+
+describe("sandbox extra tools", () => {
+  it("sends extra tool defs to the model and mentions the sandbox without claiming to be Claude", async () => {
+    let tools: unknown[] = [];
+    let system = "";
+    const llm: LlmClient = {
+      async create(params) {
+        tools = params.tools as unknown[];
+        system = params.system;
+        return {
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: "结论" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+    await processSessionJob(
+      { sessionId: "sess_1" },
+      {
+        llm,
+        model: "qwen3.8-max",
+        sandboxEnabled: true,
+        extraToolDefs: [{ name: "bash", description: "沙箱", input_schema: { type: "object", properties: {} } }],
+        loadSession: async () => session(),
+        patchCard: async () => {},
+        recordUsage: async () => {},
+        recordAudit: async () => {},
+        markSession: async () => {},
+        appendEvents: async () => {},
+        listMessages: async () => "[]",
+        getBudget: async () => ({ usedUsd: 0, limitUsd: null }),
+      },
+    );
+    expect(JSON.stringify(tools)).toContain("bash");
+    expect(system).toContain("隔离沙箱");
+    expect(system).toContain("qwen3.8-max");
+    expect(system).not.toMatch(/队友 Claude/);
+  });
+});

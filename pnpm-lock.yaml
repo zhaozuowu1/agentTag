@@ -78,9 +78,15 @@ importers:
       '@agenttag/memory':
         specifier: workspace:*
         version: link:../../packages/memory
+      '@agenttag/proxy':
+        specifier: workspace:*
+        version: link:../../packages/proxy
       '@agenttag/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@agenttag/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       bullmq:
         specifier: ^5.58.5
         version: 5.81.5
@@ -276,6 +282,12 @@ importers:
       '@agenttag/memory':
         specifier: workspace:*
         version: link:../memory
+      '@agenttag/proxy':
+        specifier: workspace:*
+        version: link:../proxy
+      '@agenttag/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
     devDependencies:
       '@types/node':
         specifier: ^22.15.30
