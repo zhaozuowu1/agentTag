@@ -272,6 +272,18 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.2)(tsx@4.23.13)
 
+  packages/sandbox:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.30
+        version: 22.20.2
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.2)(tsx@4.23.13)
+
 packages:
 
   '@drizzle-team/brocli@0.10.2':
