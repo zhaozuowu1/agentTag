@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import http from "node:http";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,7 +8,18 @@ import { startAgentProxy, type AgentProxy } from "./server.ts";
 const execFileAsync = promisify(execFile);
 const SECRET = "tok_test_not_for_sandbox";
 
-describe("sandbox HTTP_PROXY egress", () => {
+function dockerDaemonUp(): boolean {
+  try {
+    execFileSync("docker", ["info"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const describeDocker = dockerDaemonUp() ? describe : describe.skip;
+
+describeDocker("sandbox HTTP_PROXY egress", () => {
   const boxes: Sandbox[] = [];
   const proxies: AgentProxy[] = [];
   const closers: Array<() => Promise<void>> = [];

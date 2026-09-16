@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import http from "node:http";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,6 +16,17 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+function dockerDaemonUp(): boolean {
+  try {
+    execFileSync("docker", ["info"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const describeDocker = dockerDaemonUp() ? describe : describe.skip;
+
 const SECRET_ENV = {
   DASHSCOPE_API_KEY: "sk-dashscope-must-not-leak",
   FEISHU_APP_SECRET: "feishu-secret-must-not-leak",
@@ -27,7 +38,7 @@ async function dockerJson(args: string[]): Promise<unknown> {
   return JSON.parse(stdout) as unknown;
 }
 
-describe("createDockerSandbox", () => {
+describeDocker("createDockerSandbox", () => {
   const boxes: Sandbox[] = [];
 
   afterEach(async () => {
@@ -245,7 +256,7 @@ describe("createDockerSandbox", () => {
 });
 
 describe("resolveSandboxImage", () => {
-  it("returns a locally available image without pulling", async () => {
+  it.skipIf(!dockerDaemonUp())("returns a locally available image without pulling", async () => {
     const image = await resolveSandboxImage("python:3.12-slim");
     expect(image).toBe("python:3.12-slim");
   });

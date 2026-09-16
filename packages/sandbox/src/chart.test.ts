@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDockerSandbox, type Sandbox } from "./runner.ts";
 
@@ -29,7 +30,18 @@ for i, v in enumerate(vals):
 pathlib.Path("chart.png").write_bytes(png(width, height, img))
 `;
 
-describe("sandbox csv chart", () => {
+function dockerDaemonUp(): boolean {
+  try {
+    execFileSync("docker", ["info"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const describeDocker = dockerDaemonUp() ? describe : describe.skip;
+
+describeDocker("sandbox csv chart", () => {
   const boxes: Sandbox[] = [];
   afterEach(async () => {
     await Promise.all(boxes.splice(0).map((box) => box.destroy().catch(() => undefined)));
