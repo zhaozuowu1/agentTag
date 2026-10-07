@@ -276,6 +276,67 @@ describe("createFeishuFileTools", () => {
     expect(new TextDecoder().decode(files.get("sales.csv"))).toBe(threadCsv);
   });
 
+  it("prefers a parent-chat CSV over a newer thread PDF when messageId is omitted", async () => {
+    const files = new Map<string, Uint8Array>();
+    const csv = "month,revenue\n1,10\n";
+    const now = Date.now();
+    const tools = createFeishuFileTools({
+      client: client({
+        listMessages: async (opts) => {
+          if (opts.container === "thread") {
+            return [
+              {
+                messageId: "om_thread_pdf",
+                chatId: "oc_auth",
+                threadId: "omt_topic",
+                parentId: null,
+                rootId: null,
+                messageType: "file",
+                text: "",
+                senderOpenId: "ou_user",
+                createTime: String(now - 1_000),
+                mentions: [],
+                fileKey: "file_pdf",
+                fileName: "notes.pdf",
+                imageKey: null,
+              } satisfies FeishuMessage,
+            ];
+          }
+          return [
+            {
+              messageId: "om_parent_csv",
+              chatId: "oc_auth",
+              threadId: null,
+              parentId: null,
+              rootId: null,
+              messageType: "file",
+              text: "",
+              senderOpenId: "ou_user",
+              createTime: String(now - 20_000),
+              mentions: [],
+              fileKey: "file_parent",
+              fileName: "sales.csv",
+              imageKey: null,
+            } satisfies FeishuMessage,
+          ];
+        },
+        downloadMessageResource: async (messageId, fileKey) => {
+          expect(messageId).toBe("om_parent_csv");
+          expect(fileKey).toBe("file_parent");
+          return new TextEncoder().encode(csv);
+        },
+      }),
+      sandbox: memorySandbox(files),
+      replyToMessageId: "om_card",
+      chatId: "oc_auth",
+      threadId: "omt_topic",
+    });
+    const result = await tools.feishu_fetch_file({ destPath: "sales.csv" });
+    expect(result).toContain("sales.csv");
+    expect(result).not.toContain("notes.pdf");
+    expect(new TextDecoder().decode(files.get("sales.csv"))).toBe(csv);
+  });
+
   it("posts a sandbox png back into the Feishu thread", async () => {
     const files = new Map<string, Uint8Array>([["chart.png", PNG]]);
     const uploads: string[] = [];

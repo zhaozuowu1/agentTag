@@ -1,5 +1,5 @@
 import type { FeishuClient, FeishuMessage } from "@agenttag/feishu";
-import { findMessageForFetch } from "@agenttag/feishu";
+import { findMessageForFetch, isTabularFileName } from "@agenttag/feishu";
 import type { Sandbox } from "@agenttag/sandbox";
 
 export const FEISHU_FILE_TOOL_DEFS = [
@@ -97,8 +97,22 @@ async function resolveFetchMessage(
     ? client.listMessages({ container: "thread", id: threadId, pageSize: 50 })
     : Promise.resolve([]);
   const [chat, thread] = await Promise.all([chatMessages, threadMessages]);
-  if (threadId && unspecified) {
-    return findMessageForFetch(thread, query) ?? findMessageForFetch(chat, query);
+  if (unspecified) {
+    const pools = threadId ? [thread, chat] : [chat];
+    for (const tabularOnly of [true, false]) {
+      for (const pool of pools) {
+        const found = findRecentInPool(pool, tabularOnly);
+        if (found) {
+          return found;
+        }
+      }
+    }
+    return null;
   }
   return findMessageForFetch(threadId ? [...chat, ...thread] : chat, query);
+}
+
+function findRecentInPool(messages: FeishuMessage[], tabularOnly: boolean): FeishuMessage | null {
+  const pool = tabularOnly ? messages.filter((message) => isTabularFileName(message.fileName)) : messages;
+  return findMessageForFetch(pool, {});
 }
