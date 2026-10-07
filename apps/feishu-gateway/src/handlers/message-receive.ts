@@ -30,6 +30,7 @@ export interface ReceiveMessageEvent {
   messageType?: string | null;
   fileKey?: string | null;
   fileName?: string | null;
+  createTime?: string;
 }
 
 export interface RuntimeModelSnapshot {
@@ -283,6 +284,7 @@ async function resolveStartUserText(
   const picked = pickRecentChatAttachments(recent, {
     excludeMessageId: event.messageId,
     preferSenderOpenId: event.openId,
+    notAfterCreateTime: event.createTime,
   });
   return composeUserTextWithAttachments(userText, picked);
 }

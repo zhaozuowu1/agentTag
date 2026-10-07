@@ -91,10 +91,14 @@ async function resolveFetchMessage(
   threadId: string | null,
   query: { messageId?: string; fileKey?: string },
 ): Promise<FeishuMessage | null> {
-  const pools = [client.listMessages({ container: "chat", id: chatId, pageSize: 50 })];
-  if (threadId) {
-    pools.push(client.listMessages({ container: "thread", id: threadId, pageSize: 50 }));
+  const unspecified = !(query.messageId?.trim() || query.fileKey?.trim());
+  const chatMessages = client.listMessages({ container: "chat", id: chatId, pageSize: 50 });
+  const threadMessages = threadId
+    ? client.listMessages({ container: "thread", id: threadId, pageSize: 50 })
+    : Promise.resolve([]);
+  const [chat, thread] = await Promise.all([chatMessages, threadMessages]);
+  if (threadId && unspecified) {
+    return findMessageForFetch(thread, query) ?? findMessageForFetch(chat, query);
   }
-  const lists = await Promise.all(pools);
-  return findMessageForFetch(lists.flat(), query);
+  return findMessageForFetch(threadId ? [...chat, ...thread] : chat, query);
 }

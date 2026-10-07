@@ -483,6 +483,47 @@ describe("bind recent group file when @ has no attachment", () => {
     expect(created[0]?.userText).not.toContain("file_stale");
   });
 
+  it("does not bind a CSV uploaded after the triggering @ message", async () => {
+    const atMs = Date.now() - 2_000;
+    const created: Array<{ userText: string }> = [];
+    const deps = createDeps({
+      listChatMessages: async () => [
+        {
+          ...csvMessage(),
+          messageId: "om_later",
+          fileKey: "file_later",
+          fileName: "after-at.csv",
+          createTime: String(atMs + 5_000),
+        },
+        {
+          ...csvMessage(),
+          messageId: "om_csv",
+          fileKey: "file_csv_1",
+          fileName: "before-at.csv",
+          createTime: String(atMs - 8_000),
+        },
+      ],
+      createSession: async (input) => {
+        created.push({ userText: input.userText });
+        return { id: input.id, status: "running" };
+      },
+    });
+    await handleMessageReceive(
+      {
+        ...event,
+        eventId: "ev_at_before_later_csv",
+        messageId: "om_at",
+        text: "@_user_1 用我刚上传的 CSV 画图",
+        createTime: String(atMs),
+      },
+      deps,
+    );
+    expect(created[0]?.userText).toContain("om_csv");
+    expect(created[0]?.userText).toContain("before-at.csv");
+    expect(created[0]?.userText).not.toContain("om_later");
+    expect(created[0]?.userText).not.toContain("after-at.csv");
+  });
+
   it("keeps messageId when a file is posted as an in-thread follow-up", async () => {
     const appended: Array<{ sessionId: string; text: string }> = [];
     const deps = createDeps({
