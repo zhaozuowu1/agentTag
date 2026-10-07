@@ -19,6 +19,7 @@ export function parseReceiveMessage(payload: {
       parent_id?: string;
       message_type?: string;
       content?: string;
+      create_time?: string;
       mentions?: Array<{ id?: string | { open_id?: string } }>;
     };
   };
@@ -43,6 +44,7 @@ export function parseReceiveMessage(payload: {
     messageType: message.message_type ?? (file.fileKey ? "file" : "text"),
     fileKey: file.fileKey,
     fileName: file.fileName,
+    createTime: message.create_time || undefined,
   };
 }
 

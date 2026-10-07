@@ -1,5 +1,5 @@
 import type { FeishuClient, FeishuMessage } from "@agenttag/feishu";
-import { findMessageForFetch } from "@agenttag/feishu";
+import { findMessageForFetch, isTabularFileName } from "@agenttag/feishu";
 import type { Sandbox } from "@agenttag/sandbox";
 
 export const FEISHU_FILE_TOOL_DEFS = [
@@ -91,10 +91,28 @@ async function resolveFetchMessage(
   threadId: string | null,
   query: { messageId?: string; fileKey?: string },
 ): Promise<FeishuMessage | null> {
-  const pools = [client.listMessages({ container: "chat", id: chatId, pageSize: 50 })];
-  if (threadId) {
-    pools.push(client.listMessages({ container: "thread", id: threadId, pageSize: 50 }));
+  const unspecified = !(query.messageId?.trim() || query.fileKey?.trim());
+  const chatMessages = client.listMessages({ container: "chat", id: chatId, pageSize: 50 });
+  const threadMessages = threadId
+    ? client.listMessages({ container: "thread", id: threadId, pageSize: 50 })
+    : Promise.resolve([]);
+  const [chat, thread] = await Promise.all([chatMessages, threadMessages]);
+  if (unspecified) {
+    const pools = threadId ? [thread, chat] : [chat];
+    for (const tabularOnly of [true, false]) {
+      for (const pool of pools) {
+        const found = findRecentInPool(pool, tabularOnly);
+        if (found) {
+          return found;
+        }
+      }
+    }
+    return null;
   }
-  const lists = await Promise.all(pools);
-  return findMessageForFetch(lists.flat(), query);
+  return findMessageForFetch(threadId ? [...chat, ...thread] : chat, query);
+}
+
+function findRecentInPool(messages: FeishuMessage[], tabularOnly: boolean): FeishuMessage | null {
+  const pool = tabularOnly ? messages.filter((message) => isTabularFileName(message.fileName)) : messages;
+  return findMessageForFetch(pool, {});
 }

@@ -74,6 +74,39 @@ describe("pickRecentChatAttachments", () => {
     );
     expect(picked).toEqual([]);
   });
+
+  it("does not bind a CSV uploaded after the triggering @ message", () => {
+    const atMs = 1_700_000_000_000;
+    const picked = pickRecentChatAttachments(
+      [
+        msg({
+          messageId: "om_later",
+          messageType: "file",
+          fileKey: "file_later",
+          fileName: "after-at.csv",
+          senderOpenId: "ou_user",
+          createTime: String(atMs + 5_000),
+        }),
+        msg({
+          messageId: "om_csv",
+          messageType: "file",
+          fileKey: "file_csv_1",
+          fileName: "before-at.csv",
+          senderOpenId: "ou_other",
+          createTime: String(atMs - 8_000),
+        }),
+      ],
+      {
+        excludeMessageId: "om_at",
+        preferSenderOpenId: "ou_user",
+        nowMs: atMs + 10_000,
+        notAfterCreateTime: String(atMs),
+      },
+    );
+    expect(picked).toEqual([
+      { messageId: "om_csv", fileKey: "file_csv_1", fileName: "before-at.csv" },
+    ]);
+  });
 });
 
 describe("attachmentFromEvent", () => {

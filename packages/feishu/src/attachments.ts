@@ -59,10 +59,12 @@ export function pickRecentChatAttachments(
     preferSenderOpenId?: string;
     nowMs?: number;
     maxAgeMs?: number;
+    notAfterCreateTime?: string;
   } = {},
 ): BoundAttachment[] {
   const nowMs = opts.nowMs ?? Date.now();
   const maxAgeMs = opts.maxAgeMs ?? RECENT_ATTACHMENT_MAX_AGE_MS;
+  const notAfterMs = opts.notAfterCreateTime ? parseTimeMs(opts.notAfterCreateTime) : null;
   const eligible = messages.filter((message) => {
     if (opts.excludeMessageId && message.messageId === opts.excludeMessageId) {
       return false;
@@ -72,6 +74,9 @@ export function pickRecentChatAttachments(
     }
     const t = parseTimeMs(message.createTime);
     if (t != null && nowMs - t > maxAgeMs) {
+      return false;
+    }
+    if (notAfterMs != null && t != null && t > notAfterMs) {
       return false;
     }
     return true;

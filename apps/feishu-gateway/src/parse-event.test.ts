@@ -16,6 +16,7 @@ describe("parseReceiveMessage", () => {
           chat_id: "oc_auth",
           content: JSON.stringify({ text: "@_user_1 总结本群未关闭事项" }),
           mentions: [{ id: { open_id: "ou_bot" } }],
+          create_time: "1700000000000",
         },
       },
     });
@@ -27,6 +28,7 @@ describe("parseReceiveMessage", () => {
       messageType: "text",
       fileKey: null,
       fileName: null,
+      createTime: "1700000000000",
     });
   });
 
